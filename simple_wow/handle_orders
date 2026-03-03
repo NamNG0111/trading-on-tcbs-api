@@ -1,0 +1,230 @@
+import asyncio
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Dict, List, Optional, Callable
+
+class OrderStatus(Enum):
+    PENDING = "PENDING"
+    FILLED = "FILLED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+
+class OrderAction(Enum):
+    PLACE = "PLACE"
+    CANCEL = "CANCEL"
+    MODIFY = "MODIFY"
+    REVERSE = "REVERSE"
+
+@dataclass
+class ManagedOrder:
+    order_id: str
+    symbol: str
+    side: str  # NB/BÁN, NS/BÁN
+    quantity: int
+    price: float
+    status: OrderStatus
+    placed_at: datetime
+    timeout_seconds: int
+    max_retries: int = 3
+    retry_count: int = 0
+    reverse_on_failure: bool = False
+    
+    def is_expired(self) -> bool:
+        return (datetime.now() - self.placed_at).seconds > self.timeout_seconds
+    
+    def should_retry(self) -> bool:
+        return self.retry_count < self.max_retries
+    
+    def can_reverse(self) -> bool:
+        return self.reverse_on_failure and self.status in [OrderStatus.EXPIRED, OrderStatus.CANCELLED]
+
+class SmartOrderManager:
+    def __init__(self, api_client):
+        self.api_client = api_client
+        self.managed_orders: Dict[str, ManagedOrder] = {}
+        self.order_handlers: Dict[OrderStatus, Callable] = {}
+        self.is_monitoring = False
+    
+    def add_order_handler(self, status: OrderStatus, handler: Callable):
+        """Thêm handler xử lý trạng thái lệnh"""
+        self.order_handlers[status] = handler
+    
+    async def place_smart_order(self, symbol: str, quantity: int, price: float, 
+                               side: str, timeout: int = 60, reverse_on_failure: bool = False) -> str:
+        """
+        Đặt lệnh thông minh với khả năng xử lý lỗi
+        """
+        try:
+            # Đặt lệnh qua API
+            order_result = await self.api_client.place_order(
+                account_no="your_account_no",
+                symbol=symbol,
+                quantity=quantity,
+                price=price,
+                side=side
+            )
+            
+            if "orderId" in order_result:
+                order_id = order_result["orderId"]
+                
+                # Tạo managed order
+                managed_order = ManagedOrder(
+                    order_id=order_id,
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    price=price,
+                    status=OrderStatus.PENDING,
+                    placed_at=datetime.now(),
+                    timeout_seconds=timeout,
+                    reverse_on_failure=reverse_on_failure
+                )
+                
+                self.managed_orders[order_id] = managed_order
+                print(f"✓ Đặt lệnh thông minh: {symbol} {side} {quantity}@{price}")
+                
+                return order_id
+            else:
+                print(f"✗ Lỗi khi đặt lệnh: {order_result}")
+                return None
+                
+        except Exception as e:
+            print(f"Lỗi khi đặt lệnh thông minh: {e}")
+            return None
+    
+    async def start_monitoring(self):
+        """Bắt đầu theo dõi các lệnh đang chờ"""
+        self.is_monitoring = True
+        print("🔍 Bắt đầu theo dõi lệnh")
+        
+        while self.is_monitoring:
+            try:
+                await self._check_orders_status()
+                await asyncio.sleep(5)  # Kiểm tra mỗi 5 giây
+                
+            except asyncio.CancelledError:
+                print("\n🛑 Dừng theo dõi lệnh")
+                break
+            except Exception as e:
+                print(f"Lỗi khi theo dõi lệnh: {e}")
+                await asyncio.sleep(10)
+    
+    async def _check_orders_status(self):
+        """Kiểm tra trạng thái tất cả lệnh đang chờ"""
+        expired_orders = []
+        
+        for order_id, managed_order in self.managed_orders.items():
+            if managed_order.status == OrderStatus.PENDING:
+                if managed_order.is_expired():
+                    expired_orders.append(order_id)
+                else:
+                    # Kiểm tra trạng thái thực tế từ API
+                    await self._update_order_status(order_id, managed_order)
+        
+        # Xử lý các lệnh hết hạn
+        for order_id in expired_orders:
+            await self._handle_expired_order(order_id)
+    
+    async def _update_order_status(self, order_id: str, managed_order: ManagedOrder):
+        """Cập nhật trạng thái lệnh từ API"""
+        try:
+            # Lấy trạng thái từ API
+            order_info = await self.api_client.get_order_status("your_account_no", order_id)
+            
+            if order_info and "data" in order_info:
+                order_data = order_info["data"][0]
+                status_code = order_data.get("orStatus")
+                
+                # Map status code sang enum
+                new_status = self._map_status_code(status_code)
+                
+                if new_status != managed_order.status:
+                    old_status = managed_order.status
+                    managed_order.status = new_status
+                    
+                    print(f"📊 Lệnh {order_id} thay đổi trạng thái: {old_status.value} -> {new_status.value}")
+                    
+                    # Gọi handler nếu có
+                    if new_status in self.order_handlers:
+                        await self.order_handlers[new_status](order_id, managed_order)
+                    
+        except Exception as e:
+            print(f"Lỗi khi cập nhật trạng thái lệnh {order_id}: {e}")
+    
+    def _map_status_code(self, status_code: str) -> OrderStatus:
+        """Map mã trạng thái sang enum"""
+        status_map = {
+            "2": OrderStatus.PENDING,    # Đã gửi
+            "3": OrderStatus.CANCELLED,  # Đã hủy
+            "4": OrderStatus.FILLED,     # Đã khớp
+            "5": OrderStatus.EXPIRED,    # Hết hạn
+            "0": OrderStatus.REJECTED,   # Từ chối
+        }
+        return status_map.get(status_code, OrderStatus.PENDING)
+    
+    async def _handle_expired_order(self, order_id: str):
+        """Xử lý lệnh hết hạn"""
+        managed_order = self.managed_orders[order_id]
+        
+        print(f"⏰ Lệnh {order_id} ({managed_order.symbol}) đã hết hạn")
+        
+        # Hủy lệnh nếu chưa được khớp
+        if managed_order.status == OrderStatus.PENDING:
+            await self._cancel_order(order_id, managed_order)
+        
+        # Đặt lệnh đảo ngược nếu được yêu cầu
+        if managed_order.can_reverse():
+            await self._place_reverse_order(managed_order)
+        
+        # Xóa khỏi danh sách theo dõi
+        del self.managed_orders[order_id]
+    
+    async def _cancel_order(self, order_id: str, managed_order: ManagedOrder):
+        """Hủy lệnh"""
+        try:
+            cancel_data = {
+                "ordersList": [{"orderID": order_id}]
+            }
+            
+            cancel_result = await self.api_client.cancel_order("your_account_no", cancel_data)
+            
+            if cancel_result:
+                print(f"✅ Đã hủy lệnh {order_id}")
+                managed_order.status = OrderStatus.CANCELLED
+            
+        except Exception as e:
+            print(f"Lỗi khi hủy lệnh {order_id}: {e}")
+    
+    async def _place_reverse_order(self, managed_order: ManagedOrder):
+        """Đặt lệnh đảo ngược"""
+        try:
+            # Đảo ngược bên giao dịch
+            reverse_side = "NS" if managed_order.side == "NB" else "NB"
+            
+            # Lấy giá hiện tại (cần implement)
+            current_price = await self._get_current_price(managed_order.symbol)
+            
+            print(f"🔄 Đặt lệnh đảo ngược: {managed_order.symbol} {reverse_side} {managed_order.quantity}@{current_price}")
+            
+            # Đặt lệnh mới
+            new_order_id = await self.place_smart_order(
+                symbol=managed_order.symbol,
+                quantity=managed_order.quantity,
+                price=current_price,
+                side=reverse_side,
+                timeout=30,
+                reverse_on_failure=False  # Không đảo ngược nữa
+            )
+            
+        except Exception as e:
+            print(f"Lỗi khi đặt lệnh đảo ngược: {e}")
+    
+    async def _get_current_price(self, symbol: str) -> float:
+        """Lấy giá hiện tại"""
+        # TODO: Implement lấy giá thời gian thực
+        return 50000  # Placeholder
+    
+    def stop_monitoring(self):
+        """Dừng theo dõi"""
+        self.is_monitoring = False

@@ -1,0 +1,36 @@
+# strategy_config.yaml
+symbols:
+  - VNM
+  - VCB
+  - TCB
+  - HPG
+
+strategies:
+  rsi:
+    enabled: true
+    params:
+      rsi_period: 14
+      overbought: 70
+      oversold: 30
+      confidence: 0.8
+
+  macd:
+    enabled: false
+    params:
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+      confidence: 0.7
+
+manual_signals:
+  - symbol: HPG
+    signal_type: BUY
+    price: 55500
+    quantity: 200
+    confidence: 1.0
+    reason: "manual_entry"
+
+trading:
+  default_quantity: 100
+  max_position_size: 1000
+  risk_per_trade: 0.02  # 2% of portfolio

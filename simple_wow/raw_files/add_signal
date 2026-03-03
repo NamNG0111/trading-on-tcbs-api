@@ -1,0 +1,230 @@
+# Tích hợp tín hiệu giao dịch vào hệ thống
+
+import asyncio
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Callable
+from enum import Enum
+
+class SignalType(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+    HOLD = "HOLD"
+
+@dataclass
+class TradingSignal:
+    symbol: str
+    signal_type: SignalType
+    price: float
+    quantity: int
+    confidence: float  # Độ tin cậy (0-1)
+    timestamp: str
+    reason: str  # Lý do tạo tín hiệu
+
+class SignalGenerator:
+    def __init__(self, api_client):
+        self.api_client = api_client
+        self.signals_history: List[TradingSignal] = []
+    
+    async def generate_signals(self) -> List[TradingSignal]:
+        """
+        Tạo tín hiệu giao dịch dựa trên các chỉ báo kỹ thuật
+        """
+        signals = []
+        symbols = ["VNM", "VCB", "TCB", "HPG"]
+        for symbol in symbols:
+            signal = await self._check_rsi_signal(symbol)
+            if signal:
+                signals.append(signal)
+        return signals
+    
+    async def _check_rsi_signal(self, symbol: str) -> Optional[TradingSignal]:
+        """
+        Kiểm tra tín hiệu dựa trên RSI
+        """
+        try:
+            current_price = await self._get_current_price(symbol)
+            rsi_value = await self._calculate_rsi(symbol)
+            if rsi_value > 70:
+                return TradingSignal(
+                    symbol=symbol,
+                    signal_type=SignalType.SELL,
+                    price=current_price,
+                    quantity=100,
+                    confidence=0.8,
+                    timestamp=self._get_current_time(),
+                    reason=f"RSI quá mua: {rsi_value}"
+                )
+            elif rsi_value < 30:
+                return TradingSignal(
+                    symbol=symbol,
+                    signal_type=SignalType.BUY,
+                    price=current_price,
+                    quantity=100,
+                    confidence=0.8,
+                    timestamp=self._get_current_time(),
+                    reason=f"RSI quá bán: {rsi_value}"
+                )
+        except Exception as e:
+            print(f"Lỗi khi kiểm tra tín hiệu cho {symbol}: {e}")
+        return None
+    
+    async def _calculate_rsi(self, symbol: str) -> float:
+        # TODO: Lấy dữ liệu giá lịch sử, tính RSI thật sự
+        return 50  # Placeholder
+    
+    async def _get_current_price(self, symbol: str) -> float:
+        url = f"https://openapi.tcbs.com.vn/market/v1/stock/real-time/{symbol}"
+        headers = {
+            "Authorization": f"Bearer {self.api_client.token}",
+            "apiKey": self.api_client.api_key,
+            "Content-Type": "application/json"
+        }
+        try:
+            async with self.api_client.session.get(url, headers=headers) as resp:
+                data = await resp.json()
+                return float(data.get("lastPrice", 0))
+        except Exception as e:
+            print(f"Lỗi lấy giá {symbol}: {e}")
+            return 0.0
+    
+    def _calculate_rsi(self, symbol: str) -> float:
+        """Tính toán RSI (cần implement)"""
+        # TODO: Implement tính toán RSI
+        return 50  # Placeholder
+    
+    def _get_current_time(self) -> str:
+        from datetime import datetime
+        return datetime.now().isoformat()
+
+class TradingExecutor:
+    def __init__(self, api_client):
+        self.api_client = api_client
+        self.active_orders: Dict[str, Dict] = {}  # order_id -> order_info
+    
+    async def execute_signal(self, signal: TradingSignal) -> bool:
+        """
+        Thực hiện lệnh dựa trên tín hiệu
+        """
+        try:
+            # Kiểm tra sức mua trước khi đặt lệnh mua
+            if signal.signal_type == SignalType.BUY:
+                if not await self._check_purchasing_power(signal.symbol, signal.quantity, signal.price):
+                    print(f"Không đủ sức mua cho {signal.symbol}")
+                    return False
+            
+            # Đặt lệnh
+            order_result = await self._place_order_async(
+                symbol=signal.symbol,
+                quantity=signal.quantity,
+                price=signal.price,
+                side="NB" if signal.signal_type == SignalType.BUY else "NS"
+            )
+            
+            if order_result and "orderId" in order_result:
+                order_id = order_result["orderId"]
+                self.active_orders[order_id] = {
+                    "signal": signal,
+                    "placed_at": asyncio.get_event_loop().time(),
+                    "status": "PENDING"
+                }
+                
+                print(f"✓ Đặt lệnh thành công: {signal.symbol} {signal.signal_type.value} {signal.quantity}@{signal.price}")
+                
+                # Lưu tín hiệu vào lịch sử
+                signal.timestamp = self._get_current_time()
+                self.api_client.signals_history.append(signal)
+                
+                return True
+            else:
+                print(f"✗ Lỗi khi đặt lệnh: {order_result}")
+                return False
+                
+        except Exception as e:
+            print(f"Lỗi khi thực hiện tín hiệu: {e}")
+            return False
+    
+    async def _check_purchasing_power(self, symbol: str, quantity: int, price: float) -> bool:
+        """Kiểm tra sức mua"""
+        try:
+            pp_data = await self._get_purchasing_power_async(symbol, price)
+            required_amount = quantity * price
+            return pp_data.get("available", 0) >= required_amount
+        except:
+            return False
+    
+    async def _place_order_async(self, symbol: str, quantity: int, price: float, side: str) -> Dict:
+        url = f"https://openapi.tcbs.com.vn/akhlys/v1/accounts/{self.api_client.account_no}/orders"
+        headers = {
+            "Authorization": f"Bearer {self.api_client.token}",
+            "apiKey": self.api_client.api_key,
+            "Content-Type": "application/json"
+        }
+        order_data = {
+            "execType": side,
+            "price": int(price),
+            "priceType": "LO",
+            "quantity": quantity,
+            "symbol": symbol
+        }
+        try:
+            async with self.api_client.session.post(url, headers=headers, json=order_data) as resp:
+                return await resp.json()
+        except Exception as e:
+            print(f"Lỗi đặt lệnh {symbol}: {e}")
+            return {}
+    
+    async def _get_purchasing_power_async(self, symbol: str, price: float) -> Dict:
+        url = f"https://openapi.tcbs.com.vn/aion/v1/accounts/{self.api_client.account_no}/ppse"
+        headers = {
+            "Authorization": f"Bearer {self.api_client.token}",
+            "apiKey": self.api_client.api_key,
+            "Content-Type": "application/json"
+        }
+        try:
+            async with self.api_client.session.get(url, headers=headers) as resp:
+                data = await resp.json()
+                # Trả về available buying power
+                return {"available": data.get("ppse", 0)}
+        except Exception as e:
+            print(f"Lỗi lấy sức mua: {e}")
+            return {"available": 0}
+    
+    def _get_current_time(self) -> str:
+        from datetime import datetime
+        return datetime.now().isoformat()
+
+class TradingSystem:
+    def __init__(self, api_client):
+        self.api_client = api_client
+        self.signal_generator = SignalGenerator(api_client)
+        self.executor = TradingExecutor(api_client)
+        self.is_running = False
+    
+    async def start_trading(self):
+        """Bắt đầu hệ thống giao dịch"""
+        self.is_running = True
+        print("🚀 Bắt đầu hệ thống giao dịch tự động")
+        
+        while self.is_running:
+            try:
+                # Tạo tín hiệu
+                signals = self.signal_generator.generate_signals()
+                
+                # Thực hiện các tín hiệu mạnh
+                for signal in signals:
+                    if signal.confidence >= 0.7:  # Chỉ thực hiện tín hiệu có độ tin cậy cao
+                        await self.executor.execute_signal(signal)
+                
+                # Đợi 30 giây trước khi kiểm tra lại
+                await asyncio.sleep(30)
+                
+            except KeyboardInterrupt:
+                print("\n🛑 Dừng hệ thống giao dịch")
+                break
+            except Exception as e:
+                print(f"Lỗi trong vòng lặp giao dịch: {e}")
+                await asyncio.sleep(60)  # Đợi lâu hơn nếu có lỗi
+    
+    def stop_trading(self):
+        """Dừng hệ thống giao dịch"""
+        self.is_running = False

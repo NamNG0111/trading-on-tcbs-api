@@ -1,0 +1,112 @@
+{
+    "basicInfo": {
+        "tcbsId": "0001514946",
+        "code105C": "105C514946",
+        "status": "ACTIVE",
+        "type": "INDIVIDUAL",
+        "depository": true
+    },
+    "personalInfo": {
+        "fullName": "Nguy\u1ec5n Giang Nam",
+        "fullNameNoAccent": "Nguyen Giang Nam",
+        "firstName": "Nam",
+        "lastName": "Nguy\u1ec5n Giang",
+        "email": "nam.n.g.93@gmail.com",
+        "phoneNumber": "0985514946",
+        "gender": "MALE",
+        "birthday": "1993-09-01T00:00:00.000Z",
+        "contactAddress": "S1702 The One Residence, Gamuda Gardens, Tr\u1ea7n Ph\u00fa, Ho\u00e0ng Mai H\u00e0 N\u1ed9i",
+        "permanentAddress": null,
+        "nationality": "VN",
+        "nationalityName": "Viet Nam",
+        "referer": 0,
+        "original": null,
+        "taxIdNumber": null,
+        "acronym": null,
+        "avatarData": null,
+        "typeAccount": null,
+        "userId": 5293644,
+        "relationship": null,
+        "createdDate": "2020-03-02T09:19:30.000Z",
+        "updatedDate": "2020-03-02T13:51:58.000Z",
+        "rmValue": null,
+        "flowOpenAccount": null,
+        "envelopeId": null,
+        "referralCode": null,
+        "statusProcess": null,
+        "homePhone": null,
+        "fax": null,
+        "businessType": null,
+        "ppBusinessType": null,
+        "ppBusinessField": null,
+        "ppBusinessTypeName": null,
+        "ppBusinessFieldName": null,
+        "avatarUrl": null,
+        "identityCard": {
+            "idNumber": "027093000556",
+            "idPlace": "C\u1ee5c CS QLHC v\u1ec1 TTXH",
+            "idDate": "2023-08-06T00:00:00.000+07:00",
+            "expireDate": "2033-09-01",
+            "idType": "0"
+        }
+    },
+    "bankSubAccounts": [
+        {
+            "accountNo": "0001262203",
+            "accountName": "Nguy\u1ec5n Giang Nam",
+            "bankCode": null,
+            "accountType": "NORMAL",
+            "accountTypeName": "Th\u01b0\u1eddng",
+            "status": "1",
+            "isDefault": "N"
+        },
+        {
+            "accountNo": "0001262204",
+            "accountName": "Nguy\u1ec5n Giang Nam",
+            "bankCode": null,
+            "accountType": "MARGIN",
+            "accountTypeName": "K\u00fd qu\u1ef9",
+            "status": "1",
+            "isDefault": "Y"
+        },
+        {
+            "accountNo": "105C514946A",
+            "accountName": "Nguy\u1ec5n Giang Nam",
+            "bankCode": "105C514946A",
+            "accountType": "DERIVATIVE",
+            "accountTypeName": "Ph\u00e1i sinh",
+            "status": "1",
+            "isDefault": null
+        },
+        {
+            "accountNo": "0001514946POWER",
+            "accountName": "Nguy\u1ec5n Giang Nam",
+            "bankCode": null,
+            "accountType": "POWER",
+            "accountTypeName": "POWER",
+            "status": "1",
+            "isDefault": "N"
+        }
+    ],
+    "bankAccounts": [
+        {
+            "bankAccountId": 8618972,
+            "accountNo": "19032999626017",
+            "accountName": "NGUYEN GIANG NAM",
+            "accountNameNoAccent": "NGUYEN GIANG NAM",
+            "bankCode": "01310001",
+            "bankName": "Ng\u00e2n h\u00e0ng TMCP K\u1ef9 Th\u01b0\u01a1ng Vi\u1ec7t Nam",
+            "bankProvince": "HA-NOI",
+            "branchCode": "NH TMCP KY THUONG VN HOI SO CHINH",
+            "bankType": "CENTRALIZED_PAYMENT",
+            "bankSys": "310",
+            "bankAccountType": "STOCK_FUND",
+            "authorized": null,
+            "rootBankProvince": "HA-NOI",
+            "rootBranchCode": "NH TMCP KY THUONG VN HOI SO CHINH",
+            "rootBankCode": "01310001",
+            "rootBankName": "NH TMCP KY THUONG VN",
+            "insType": "LOCAL"
+        }
+    ]
+}

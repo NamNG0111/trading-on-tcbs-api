@@ -1,0 +1,143 @@
+# File này đổi tên từ trading_asyncio.py sang trading_asyncio_module.py để tránh lỗi import module
+import asyncio
+import aiohttp
+from typing import Dict, List, Optional
+from datetime import datetime
+
+class AsyncTCBSClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://openapi.tcbs.com.vn"
+        self.token = None
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.account_no = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        await self._get_token()
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def _get_token(self) -> bool:
+        url = f"{self.base_url}/gaia/v1/oauth2/openapi/token"
+        payload = {
+            "otp": "123456",
+            "apiKey": self.api_key
+        }
+        try:
+            async with self.session.post(url, json=payload) as response:
+                data = await response.json()
+                self.token = data.get("token")
+                return self.token is not None
+        except Exception as e:
+            print(f"Lỗi lấy token: {e}")
+            return False
+    def _get_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+    async def get_account_info(self, custody_code: str) -> Dict:
+        url = f"{self.base_url}/eros/v2/get-profile/by-username/{custody_code}"
+        params = {"fields": "basicInfo,personalInfo,bankSubAccounts,bankAccounts"}
+        async with self.session.get(url, headers=self._get_headers(), params=params) as response:
+            return await response.json()
+    async def place_order(self, account_no: str, symbol: str, quantity: int, price: float, side: str) -> Dict:
+        url = f"{self.base_url}/akhlys/v1/accounts/{account_no}/orders"
+        order_data = {
+            "execType": side,
+            "price": int(price),
+            "priceType": "LO",
+            "quantity": quantity,
+            "symbol": symbol
+        }
+        async with self.session.post(url, headers=self._get_headers(), json=order_data) as response:
+            return await response.json()
+    async def get_order_status(self, account_no: str, order_id: str) -> Dict:
+        url = f"{self.base_url}/aion/v1/accounts/{account_no}/orders/{order_id}"
+        async with self.session.get(url, headers=self._get_headers()) as response:
+            return await response.json()
+    async def get_cash_balance(self, account_no: str) -> Dict:
+        url = f"{self.base_url}/aion/v1/accounts/{account_no}/cashInvestments"
+        async with self.session.get(url, headers=self._get_headers()) as response:
+            return await response.json()
+
+class AsyncTradingMonitor:
+    def __init__(self, client: AsyncTCBSClient, symbols: List[str], order_manager=None):
+        self.client = client
+        self.symbols = symbols
+        self.price_cache: Dict[str, float] = {}
+        self.is_monitoring = False
+        self.order_manager = order_manager
+    async def start_monitoring(self, check_interval: int = 5):
+        self.is_monitoring = True
+        print(f"📊 Bắt đầu theo dõi {len(self.symbols)} mã cổ phiếu")
+        while self.is_monitoring:
+            try:
+                await self._update_prices()
+                for symbol in self.symbols:
+                    await self._check_signal(symbol)
+                await asyncio.sleep(check_interval)
+            except asyncio.CancelledError:
+                print("\n🛑 Dừng theo dõi")
+                break
+            except Exception as e:
+                print(f"Lỗi khi theo dõi: {e}")
+                await asyncio.sleep(10)
+    async def _update_prices(self):
+        for symbol in self.symbols:
+            # TODO: gọi API lấy giá thực tế
+            self.price_cache[symbol] = 50000 + (hash(symbol) % 1000)
+    async def _check_signal(self, symbol: str):
+        current_price = self.price_cache.get(symbol)
+        if not current_price:
+            return
+        if current_price > 51000:
+            print(f"📈 Tín hiệu MUA {symbol} tại giá {current_price}")
+            if self.order_manager:
+                await self.order_manager.place_and_monitor_order(self.client.account_no, symbol, 100, current_price, "NB")
+        elif current_price < 49000:
+            print(f"📉 Tín hiệu BÁN {symbol} tại giá {current_price}")
+            if self.order_manager:
+                await self.order_manager.place_and_monitor_order(self.client.account_no, symbol, 100, current_price, "NS")
+    def stop_monitoring(self):
+        self.is_monitoring = False
+
+class AsyncOrderManager:
+    def __init__(self, client: AsyncTCBSClient):
+        self.client = client
+        self.pending_orders: Dict[str, Dict] = {}
+        self.order_timeout = 30  # seconds
+    async def place_and_monitor_order(self, account_no: str, symbol: str, quantity: int, price: float, side: str) -> bool:
+        try:
+            order_result = await self.client.place_order(account_no, symbol, quantity, price, side)
+            if "orderId" in order_result:
+                order_id = order_result["orderId"]
+                self.pending_orders[order_id] = {
+                    "symbol": symbol,
+                    "placed_at": datetime.now(),
+                    "timeout": self.order_timeout
+                }
+                return await self._monitor_order(account_no, order_id)
+            return False
+        except Exception as e:
+            print(f"Lỗi khi đặt lệnh: {e}")
+            return False
+    async def _monitor_order(self, account_no: str, order_id: str) -> bool:
+        start_time = datetime.now()
+        while (datetime.now() - start_time).seconds < self.order_timeout:
+            try:
+                order_status = await self.client.get_order_status(account_no, order_id)
+                status = order_status.get("data", [{}])[0].get("orStatus")
+                if status == "4":
+                    print(f"✅ Lệnh {order_id} đã được thực hiện")
+                    return True
+                elif status == "3":
+                    print(f"❌ Lệnh {order_id} đã bị hủy")
+                    return False
+                await asyncio.sleep(2)
+            except Exception as e:
+                print(f"Lỗi khi kiểm tra lệnh {order_id}: {e}")
+                await asyncio.sleep(5)
+        print(f"⏰ Lệnh {order_id} hết thời gian chờ")
+        return False

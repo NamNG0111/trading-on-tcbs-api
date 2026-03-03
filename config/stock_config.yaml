@@ -1,0 +1,143 @@
+# Main Application Configuration
+# This file contains non-sensitive configuration settings
+
+# Trading Configuration
+trading:
+  symbols:
+    - "VIC"
+    - "VHM" 
+    - "VNM"
+    - "SAB"
+    - "MSN"
+    - "TCB"
+    - "BID"
+    - "CTG"
+    - "HPG"
+    - "MWG"
+  
+  position_limits:
+    max_position_per_symbol: 100000
+    max_portfolio_value: 5000000000
+  
+  risk_management:
+    risk_per_trade: 0.02
+    stop_loss_pct: 0.05
+    take_profit_pct: 0.10
+    min_signal_strength: 0.4
+  
+  market_hours:
+    morning_session:
+      start: [9, 0]
+      end: [11, 30]
+    afternoon_session:
+      start: [13, 0]
+      end: [15, 0]
+  
+  data_settings:
+    update_interval: 60  # seconds
+    cache_duration: 86400  # 24 hours in seconds
+    historical_days: 252  # ~1 year of trading days
+
+# Technical Indicators Configuration
+indicators:
+  rsi:
+    period: 14
+    oversold: 30
+    overbought: 70
+  
+  sma:
+    period: 20
+  
+  ema:
+    period: 20
+  
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+  
+  bollinger_bands:
+    period: 20
+    std_dev: 2.0
+  
+  stochastic:
+    k_period: 14
+    d_period: 3
+    smooth_k: 3
+  
+  # Custom indicators
+  price_momentum:
+    period: 10
+    threshold: 0.02
+  
+  volatility:
+    period: 20
+    threshold: 0.05
+
+# Signal Generation Rules
+signal_rules:
+  rsi_oversold_overbought:
+    enabled: true
+    min_strength: 0.3
+    weight: 1.0
+  
+  rsi_ma_combo:
+    enabled: true
+    min_strength: 0.4
+    weight: 1.2
+  
+  macd_crossover:
+    enabled: true
+    min_strength: 0.3
+    weight: 1.0
+  
+  bollinger_breakout:
+    enabled: false
+    min_strength: 0.5
+    weight: 0.8
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  files:
+    main_log: "logs/Main/main.log"
+    trading_log: "logs/Stock Strategy/trading.log"
+    error_log: "logs/errors.log"
+  
+  rotation:
+    max_size: "10MB"
+    backup_count: 5
+
+# Data Storage Configuration
+data_storage:
+  base_directory: "data"
+  
+  directories:
+    historical: "data/historical"
+    cache: "data/cache"
+    backups: "data/backups"
+  
+  file_formats:
+    historical_data: "parquet"  # or "csv", "json"
+    cache_format: "pickle"
+    backup_format: "json"
+
+# Performance Settings
+performance:
+  max_workers: 4  # for parallel processing
+  chunk_size: 1000  # for batch operations
+  memory_limit: "1GB"
+  
+  caching:
+    enabled: true
+    ttl: 300  # 5 minutes
+    max_entries: 10000
+
+# Development Settings
+development:
+  debug_mode: false
+  dry_run: false
+  mock_api: false
+  test_data_path: "data/test_validation"
