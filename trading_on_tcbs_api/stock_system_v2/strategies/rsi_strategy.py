@@ -1,7 +1,7 @@
 
 import pandas as pd
 import numpy as np
-from ..strategy import SignalStrategy
+from .strategy import SignalStrategy
 
 class RSIStrategy(SignalStrategy):
     """

@@ -9,9 +9,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-from stock_system_v2.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
 from trading_on_tcbs_api.stock_strategy.stock_api_client import StockTradingClient
-from stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2 import config
 
 async def fetch_real_assets():
     print("--- FETCHING REAL ASSETS (Using StockTradingClient) ---")

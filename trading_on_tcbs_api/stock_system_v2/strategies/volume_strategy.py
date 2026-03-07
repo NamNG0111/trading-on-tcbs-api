@@ -1,6 +1,6 @@
 
 import pandas as pd
-from ..strategy import SignalStrategy
+from .strategy import SignalStrategy
 
 class VolumeBoomStrategy(SignalStrategy):
     """

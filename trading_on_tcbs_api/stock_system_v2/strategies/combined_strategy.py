@@ -1,7 +1,7 @@
 
 import pandas as pd
 from typing import List, Optional
-from ..strategy import SignalStrategy
+from .strategy import SignalStrategy
 
 class CombinedStrategy(SignalStrategy):
     """

@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-from stock_system_v2.account_manager import AccountManager
+from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
 
 async def test_account_sync():
     print("--- TESTING ACCOUNT MANAGER SYNC ---")
