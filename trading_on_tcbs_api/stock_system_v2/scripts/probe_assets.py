@@ -109,8 +109,8 @@ def probe_assets():
     except Exception as e:
         print(f"    Error reading credentials.yaml: {e}")
         
-    # Remove duplicates
-    target_accounts = list(set(target_accounts))
+    # Hardcode based on actual account profile discovery
+    target_accounts = ["0001262203", "0001262204"]
 
     for account_no in target_accounts:
         print(f"\n--- Testing Account: {account_no} ---")

@@ -66,7 +66,34 @@ class AccountManager:
             accounts_to_probe = []
             if creds.normal_sub_account_id: accounts_to_probe.append(creds.normal_sub_account_id)
             if creds.margin_sub_account_id: accounts_to_probe.append(creds.margin_sub_account_id)
-            if not accounts_to_probe and creds.sub_account_id: accounts_to_probe.append(creds.sub_account_id) # Fallback
+            # Attempt to discover active sub-accounts from Customer API
+            if not accounts_to_probe:
+                custody_id = creds.account_id
+                try:
+                    import base64
+                    parts = auth.token.split(".")
+                    if len(parts) > 1:
+                        padding = '=' * (4 - len(parts[1]) % 4)
+                        payload = json.loads(base64.b64decode(parts[1] + padding).decode('utf-8'))
+                        custody_id = payload.get('custodyID') or custody_id
+                except Exception:
+                    pass
+                
+                if custody_id:
+                    import requests
+                    url = f"{client.base_url}/aion/v1/customers/{custody_id}/accounts"
+                    try:
+                        resp = await asyncio.to_thread(requests.get, url, headers=client.headers, timeout=5)
+                        if resp.status_code == 200:
+                            for acc in resp.json():
+                                if acc.get('accountStatus') == 'A' and acc.get('accountNo'):
+                                    accounts_to_probe.append(acc.get('accountNo'))
+                    except Exception as e:
+                        print(f"[Account] Warning: Could not fetch sub-accounts automatically: {e}")
+            
+            # Absolute fallback
+            if not accounts_to_probe and creds.sub_account_id:
+                accounts_to_probe.append(creds.sub_account_id)
 
             data_found = False
 
@@ -75,26 +102,27 @@ class AccountManager:
                 
                 # Cash
                 cash_data = await client.get_cash_balance()
-                # Adapting to unknown structure returned by failed checks - assume 'cashBalance' or similar
-                # If empty, it adds 0
-                c = float(cash_data.get('cashBalance', 0) or cash_data.get('totalCash', 0) or 0)
-                real_cash += c
+                cash_dict = cash_data[0] if isinstance(cash_data, list) and len(cash_data) > 0 else cash_data
+                if isinstance(cash_dict, dict):
+                    c = float(cash_dict.get('totalCashBalance', 0) or cash_dict.get('cashBalance', 0) or 0)
+                    real_cash += c
                 
                 # Positions
-                pos_list = await client.get_stock_positions() or []
+                pos_data = await client.get_stock_positions() or {}
+                pos_list = pos_data.get('stock', []) if isinstance(pos_data, dict) else pos_data
                 for p in pos_list:
-                    sym = p.get('symbol')
-                    qty = int(p.get('quantity', 0))
-                    if sym and qty > 0:
-                        real_positions[sym] = real_positions.get(sym, 0) + qty
+                    if isinstance(p, dict):
+                        sym = p.get('symbol')
+                        qty = int(p.get('totalQtty', 0) or p.get('quantity', 0) or 0)
+                        if sym and qty >= 0:
+                            real_positions[sym] = real_positions.get(sym, 0) + qty
                 
                 # Power
                 pp_data = await client.get_buying_power()
-                pp = float(pp_data.get('buyingPower', 0) or pp_data.get('purchasingPower', 0) or 0)
-                # Buying power isn't strictly additive (margin overlaps), but for safe view taking max or sum
-                # Taking MAX for conservative estimate of *single account* power, or Sum?
-                # Usually Margin account has the relevant power.
-                real_power = max(real_power, pp) 
+                pp_dict = pp_data[0] if isinstance(pp_data, list) and len(pp_data) > 0 else pp_data
+                if isinstance(pp_dict, dict):
+                    pp = float(pp_dict.get('ppse', 0) or pp_dict.get('buyingPower', 0) or 0)
+                    real_power = max(real_power, pp) 
                 
                 if cash_data or pos_list:
                     data_found = True

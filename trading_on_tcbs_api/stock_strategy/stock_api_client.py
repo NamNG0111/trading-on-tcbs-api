@@ -19,6 +19,14 @@ class StockTradingClient(TCBSClient):
         self.logger = get_logger('stock_trading', 'Stock Trading')
         self.account_no = None  # Will be set after login
         
+    @property
+    def headers(self) -> Dict[str, str]:
+        """Dynamically construct headers with active token"""
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json"
+        }
+        
     async def initialize_stock_trading(self, account_no: str = None):
         """Initialize stock trading with account information"""
         await super().initialize_token()
@@ -236,7 +244,7 @@ class StockTradingClient(TCBSClient):
         try:
             response = await asyncio.to_thread(
                 requests.get,
-                f"{self.base_url}/akhlys/v1/accounts/{self.account_no}/assets/stocks",
+                f"{self.base_url}/aion/v1/accounts/{self.account_no}/se",
                 headers=self.headers
             )
             
@@ -260,7 +268,7 @@ class StockTradingClient(TCBSClient):
         try:
             response = await asyncio.to_thread(
                 requests.get,
-                f"{self.base_url}/akhlys/v1/accounts/{self.account_no}/assets/cash",
+                f"{self.base_url}/aion/v1/accounts/{self.account_no}/cashInvestments",
                 headers=self.headers
             )
             
@@ -291,7 +299,7 @@ class StockTradingClient(TCBSClient):
             return {}
             
         try:
-            url = f"{self.base_url}/akhlys/v1/accounts/{self.account_no}/purchasing-power"
+            url = f"{self.base_url}/aion/v1/accounts/{self.account_no}/ppse"
             params = {}
             
             if symbol:
@@ -308,7 +316,7 @@ class StockTradingClient(TCBSClient):
             
             if response.status_code == 200:
                 data = response.json()
-                return data.get('data', {})
+                return data.get('data', data)
             else:
                 await self.logger.log_error(f"Failed to get buying power: {response.status_code}")
                 return {}
