@@ -75,30 +75,39 @@ class MyNewStrategy(SignalStrategy):
         
         # 2. Buy/Sell Logic (Example pseudo-logic)
         df.loc[df['close'] > df[atr_col], 'signal'] = 1   # BUY
-        df.loc[df['close'] < df[atr_col], 'signal'] = -1  # SELL
+        df.loc[df['close'] < target_buy_price, 'signal'] = -1  # SELL
         
+        # 3. Handle signal inversion!
+        if getattr(self, 'invert', False):
+            df['signal'] = df['signal'] * -1
+            
         return df
 ```
+
+### Advanced Tricks: Reusing Strategies
+Before creating a new strategy, see if existing ones can be combined or manipulated:
+-   **Price vs Indicator**: If you want "Price vs SMA(20)", you don't need a new strategy. Just use `SimpleMAStrategy(short_window=1, long_window=20)`, as the engine maps `window=1` directly to the `close` price.
+-   **Inverted Signals (Sell on Rip / Mean Reversion)**: If a standard trend-following strategy generates a BUY, but you want to fade it, pass `invert=True` to the strategy initialization to instantly turn all `1`s into `-1`s and vice versa.
 
 ---
 
 ## ⚙️ Registering the Strategy
 
-Once your strategy class is built, it must be integrated into the execution scripts to actually run.
+Once your strategy class is built, ensure it is exposed cleanly in `trading_on_tcbs_api/stock_system_v2/strategies/__init__.py`.
 
-If it is a standalone signal, or part of a Combined Strategy, you inject it into the `CombinedStrategy` router.
+Then, inject it into the `CombinedStrategy` router in your scripts.
 
 **Locations to update:**
-1. `trading_on_tcbs_api/stock_system_v2/scripts/scan_market.py`
-2. `trading_on_tcbs_api/stock_system_v2/scripts/verify_backtest.py`
-3. `trading_on_tcbs_api/stock_system_v2/core/auto_trader.py`
+1.  `trading_on_tcbs_api/stock_system_v2/scripts/scan_market.py`
+2.  `trading_on_tcbs_api/stock_system_v2/scripts/verify_backtest.py`
+3.  `trading_on_tcbs_api/stock_system_v2/core/auto_trader.py`
 
 **Example:**
 ```python
-from trading_on_tcbs_api.stock_system_v2.strategies.my_new_strategy import MyNewStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies import CombinedStrategy, MyNewStrategy
 
 # Initialize
-my_strat = MyNewStrategy(period=14)
+my_strat = MyNewStrategy(period=14, invert=True)
 
 # Add to router
 strategy = CombinedStrategy(

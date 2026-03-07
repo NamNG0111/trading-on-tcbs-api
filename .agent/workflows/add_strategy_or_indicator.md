@@ -6,7 +6,12 @@ description: How to add a new indicator or trading strategy to the stock system
 
 This workflow outlines the exact steps the AI must take when asked to augment the trading system with new technical indicators or trading strategies.
 
-## 1. Centralized Indicator Rule
+## 1. Strategy Reuse & Modularity (Check First)
+**CRITICAL**: Before creating a new strategy class, you MUST verify if the logic can be handled by an existing parameterized strategy.
+- Example: "Exit when price drops below SMA(20)" is NOT a new strategy. It is simply `SimpleMAStrategy(short_window=1, long_window=20)`.
+- **Inversion**: If the user asks for contrarian logic ("Buy when price drops below SMA(20)"), use the `invert=True` parameter on existing strategies, which multiplies the signal by -1.
+
+## 2. Centralized Indicator Rule
 **CRITICAL**: Strategies must NEVER compute indicators internally using Pandas math. All indicators must be computed upstream in `IndicatorEngine`.
 
 If the user requests an indicator that isn't currently supported, you must first add it:

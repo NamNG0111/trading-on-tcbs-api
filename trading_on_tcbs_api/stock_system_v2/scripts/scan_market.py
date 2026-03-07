@@ -12,11 +12,13 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
 
 from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanner
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
-from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.rsi_strategy import RSIStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.combined_strategy import CombinedStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.dip_buy_strategy import DipBuyStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies import (
+    SimpleMAStrategy,
+    VolumeBoomStrategy,
+    RSIStrategy,
+    CombinedStrategy,
+    DipBuyStrategy
+)
 
 # VN30 List (Approximate)
 VN30 = [
@@ -42,18 +44,19 @@ def main():
     vol = VolumeBoomStrategy(window=20, threshold_pct=10)
     rsi = RSIStrategy(period=14)
     
-    # Buy: MA Cross AND Volume Boom
-    # Sell: RSI Overbought (Profit Taking)
-    # strategy = CombinedStrategy(
-    #     strategies=[],
-    #     buy_strategies=[vol],
-    #     sell_strategies=[rsi],
-    #     buy_mode="AND", 
-    #     sell_mode="OR"
-    # )
+    # Buy: Price Drops 10% from SMA(20) AND Volume Booms (10% over Vol_SMA)
+    # Sell: Price crosses above SMA(20)
+    dip_buy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
+    vol_boom = VolumeBoomStrategy(window=20, threshold_pct=10.0)
+    sma_exit = SimpleMAStrategy(short_window=1, long_window=20, invert=True)
     
-    # Use New Dip Buy Strategy for Today's Scan
-    strategy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
+    strategy = CombinedStrategy(
+        strategies=[],
+        buy_strategies=[dip_buy, vol_boom],
+        sell_strategies=[sma_exit],
+        buy_mode="AND", 
+        sell_mode="OR"
+    )
     
     # 2. Initialize Scanner with Auth
     scanner = MarketScanner(strategy=strategy, auth=auth)

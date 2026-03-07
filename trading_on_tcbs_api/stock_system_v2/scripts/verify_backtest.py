@@ -11,11 +11,13 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
         sys.path.insert(0, root_dir)
 
 from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
-from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.rsi_strategy import RSIStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.combined_strategy import CombinedStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.dip_buy_strategy import DipBuyStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies import (
+    SimpleMAStrategy,
+    RSIStrategy,
+    VolumeBoomStrategy,
+    CombinedStrategy,
+    DipBuyStrategy
+)
 
 def verify():
     print("Initializing Backtester...")
@@ -38,20 +40,22 @@ def verify():
     vol = VolumeBoomStrategy(window=20, threshold_pct=10)
     rsi = RSIStrategy(period=14)
     
-    # We want:
-    # BUY if MA Cross AND Volume Boom
-    # SELL if RSI Overbought (ignore MA/Vol for exit)
-    # strategy = CombinedStrategy(
-    #     strategies=[], # No common strategies
-    #     buy_strategies=[ma, vol],
-    #     sell_strategies=[rsi],
-    #     buy_mode="AND", 
-    #     sell_mode="OR"
-    # )
+    # --- Option 4: Advanced Combined Strategy ---
+    # Buy: Price Drops 10% from SMA(20) AND Volume Booms (10% over Vol_SMA)
+    # Sell: Price crosses above SMA(20)
+    dip_buy = DipBuyStrategy(sma_window=20, drop_pct=2.0)
+    vol_boom = VolumeBoomStrategy(window=20, threshold_pct=0.0)
+    # Using SimpleMAStrategy inversely as an exit condition 
+    # (Sells when short_window (close) crosses ABOVE long_window (SMA20))
+    sma_exit = SimpleMAStrategy(short_window=1, long_window=20, invert=True)
     
-    # --- Option 4: Dip Buy Strategy (Test New Feature) ---
-    print(f"\n---------- Strategy: Dip Buy (SMA 20, Drop 10%) on {symbol} ----------")
-    strategy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
+    strategy = CombinedStrategy(
+        strategies=[],
+        buy_strategies=[dip_buy, vol_boom], # Require BOTH
+        sell_strategies=[sma_exit],         # Only Sell logic
+        buy_mode="AND", 
+        sell_mode="OR"
+    )
     
     
     report = backtester.run(strategy, symbol, days=days)

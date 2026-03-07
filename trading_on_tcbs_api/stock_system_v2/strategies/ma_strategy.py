@@ -9,10 +9,10 @@ class SimpleMAStrategy(SignalStrategy):
     Buy: Short MA > Long MA
     Sell: Short MA < Long MA
     """
-    
-    def __init__(self, short_window: int = 20, long_window: int = 50):
+    def __init__(self, short_window: int = 20, long_window: int = 50, invert: bool = False):
         self.short_window = short_window
         self.long_window = long_window
+        self.invert = invert
         
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -24,8 +24,9 @@ class SimpleMAStrategy(SignalStrategy):
         # Calculate MAs
         # MAs are now pre-calculated by IndicatorEngine via pandas-ta
         # pandas-ta lowercases names to e.g., 'sma_20', 'sma_50'
-        short_col = f'sma_{self.short_window}'
-        long_col = f'sma_{self.long_window}'
+        # If window is 1, fall back to 'close' price directly.
+        short_col = 'close' if self.short_window == 1 else f'sma_{self.short_window}'
+        long_col = 'close' if self.long_window == 1 else f'sma_{self.long_window}'
         
         if short_col not in df.columns or long_col not in df.columns:
             raise ValueError(f"Missing required indicator columns: {short_col}, {long_col}")
@@ -65,4 +66,8 @@ class SimpleMAStrategy(SignalStrategy):
         # Sell Signal (-1) when moving from 1 to -1
         df.loc[(df['regime'] == -1) & (df['prev_regime'] == 1), 'signal'] = -1
         
+        # Invert signals if requested (Useful for "Sell on Rip" or shorting strategies)
+        if self.invert:
+            df['signal'] = df['signal'] * -1
+            
         return df
