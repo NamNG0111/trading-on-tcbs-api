@@ -21,6 +21,11 @@ class MarketScanner:
         results = []
         print(f"[Scanner] Scanning {len(symbols)} symbols with {type(self.strategy).__name__}...")
         
+        # 1. Flush any old prices from previous loops
+        self.data_provider.clear_realtime_cache()
+        # 2. Prefetch a 100% fresh snapshot of all live prices in one API call
+        self.data_provider.prefetch_realtime_prices(symbols)
+        
         for i, symbol in enumerate(symbols):
             try:
                 # Progress indicator
