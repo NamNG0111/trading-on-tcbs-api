@@ -2,17 +2,7 @@ import sys
 import os
 import time
 
-# Shim to allow running this file directly
-if __name__ == "__main__" and (__package__ is None or __package__ == ""):
-    # Add the parent directory (trading_on_tcbs_api root) to sys.path
-    # This allows us to import 'stock_system_v2' as a package
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    sys.path.insert(0, parent_dir)
-    
-    # Import and run the main function continuously from the package context
-    from stock_system_v2.main import main
-    sys.exit(main())
+
 
 # Relative imports work now because we forced package context above if needed
 from trading_on_tcbs_api.stock_system_v2 import config

@@ -2,10 +2,6 @@
 import sys
 import os
 
-# Ensure path is correct
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
 
 from trading_on_tcbs_api.stock_system_v2.finance.performance_analyzer import PerformanceAnalyzer
 from trading_on_tcbs_api.stock_system_v2 import config

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading_on_tcbs_api"
+version = "0.1.0"
+description = "A trading system integrated with TCBS API"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests",
+    "pandas",
+    "numpy",
+    "pandas-ta",
+    "tabulate",
+    "pyyaml"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trading_on_tcbs_api*"]

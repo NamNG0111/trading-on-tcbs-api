@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
-from .stock_api_client import StockTradingClient, StockAPIClient
+from trading_on_tcbs_api.stock_system_v2.core.stock_api_client import StockTradingClient, StockAPIClient
 from .data_manager import HistoricalDataManager, RealTimeDataIntegrator
 from ..indicators.base import BaseIndicator, Signal, SignalType, IndicatorRegistry
 from ..indicators.signal_generator import SignalGenerator, SignalRule, CombinationLogic, CommonSignalRules

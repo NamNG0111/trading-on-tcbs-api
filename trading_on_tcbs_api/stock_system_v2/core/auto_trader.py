@@ -5,13 +5,6 @@ import asyncio
 import pandas as pd
 from datetime import datetime
 
-# Shim for direct execution
-if __name__ == "__main__" and (__package__ is None or __package__ == ""):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up 3 levels from core/ to repo root
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    if root_dir not in sys.path:
-        sys.path.insert(0, root_dir)
 
 from trading_on_tcbs_api.stock_system_v2 import config
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
@@ -60,7 +53,30 @@ class AutoTrader:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting Scan on {len(self.symbols)} symbols...")
         
         # 0. Sync Wallet (Try Real Data)
-        await self.account.sync_from_api()
+        target_account = None
+        if not self.order_manager.safe_mode:
+            print("\n" + "="*50)
+            print("WARNING: LIVE TRADING MODE IS ACTIVE")
+            print("="*50)
+            print("Please select the sub-account to trade on:")
+            print("  1. Normal Account (0001262203)")
+            print("  2. Margin Account (0001262204)")
+            print("  (Or type specific sub-account ID e.g. 0001262203)")
+            choice = input("Select Account [1/2/ID] (Press Enter for Default): ").strip()
+            
+            if choice == "1":
+                target_account = "0001262203"
+            elif choice == "2":
+                target_account = "0001262204"
+            elif choice:
+                target_account = choice
+            
+            if target_account:
+                print(f"[Set Target Account] {target_account}")
+            else:
+                print("[Set Target Account] Default aggregated view")
+                
+        await self.account.sync_from_api(target_account=target_account)
         
         print(f"[Wallet] Balance: {self.account.get_balance():,.0f} VND | Positions: {self.account.get_positions()}")
         

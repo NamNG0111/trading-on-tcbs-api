@@ -167,7 +167,7 @@ async def validate_setup():
     
     # Test API client (without actual connection)
     try:
-        from core.stock_api_client import StockTradingClient
+        from trading_on_tcbs_api.stock_system_v2.core.stock_api_client import StockTradingClient
         client = StockTradingClient()
         print("✓ Stock API client created")
     except Exception as e:

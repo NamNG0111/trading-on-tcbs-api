@@ -7,12 +7,6 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from vnstock import Vnstock
 
-# Shim to allow running this file directly
-if __name__ == "__main__" and (__package__ is None or __package__ == ""):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    sys.path.insert(0, parent_dir)
-    __package__ = "stock_system_v2"
 
 from trading_on_tcbs_api.stock_system_v2 import config
 
@@ -61,6 +55,50 @@ class DataProvider:
             print(f"[Data] Error fetching realtime price: {e}")
         return None
 
+    def _get_holidays(self) -> set:
+        """Load holidays from CSV"""
+        holidays = set()
+        holiday_file = os.path.join(config.BASE_DIR, "config", "holidays_vn.csv")
+        if os.path.exists(holiday_file):
+            try:
+                df_holidays = pd.read_csv(holiday_file)
+                if 'date' in df_holidays.columns:
+                    holidays = set(pd.to_datetime(df_holidays['date']).dt.date)
+            except Exception as e:
+                print(f"[Data] Warning: Could not read {holiday_file}: {e}")
+        return holidays
+
+    def is_trading_day(self, d: datetime.date) -> bool:
+        """Check if date is a valid trading day (Mon-Fri and not holiday)"""
+        if d.weekday() >= 5:
+            return False
+        return d not in self._get_holidays()
+
+    def get_expected_fresh_date(self) -> datetime.date:
+        """
+        Determines the date we expect the historical data to be updated to.
+        Checks config/holidays_vn.csv to safely account for Weekends and Holidays.
+        """
+        today = datetime.now()
+        
+        # Cache for 60 minutes
+        if hasattr(self, '_expected_date') and hasattr(self, '_expected_date_time'):
+            if (today - self._expected_date_time).total_seconds() < 3600:
+                return self._expected_date
+
+        # If today is a trading day and market has closed (after 16:00), we expect today's data
+        if self.is_trading_day(today.date()) and today.hour >= 16:
+            self._expected_date = today.date()
+        else:
+            # Otherwise, step backwards to find the last completed trading day
+            check_date = today.date() - timedelta(days=1)
+            while not self.is_trading_day(check_date):
+                check_date -= timedelta(days=1)
+            self._expected_date = check_date
+            
+        self._expected_date_time = today
+        return self._expected_date
+
     def get_historical_data(self, symbol: str, days: int = 365, resolution: str = '1D', force_update: bool = False, include_live: bool = True) -> pd.DataFrame:
         """
         Fetch historical data and optionally append latest live price.
@@ -89,8 +127,9 @@ class DataProvider:
                     first_date = df['time'].min().date()
                     requested_start = datetime.strptime(start_date, "%Y-%m-%d").date()
                     
-                    # 1. Is it fresh? (Today or Yesterday)
-                    is_fresh = last_date >= (today - timedelta(days=1)).date()
+                    # 1. Is it fresh? (Compare against expected fresh date from local logic)
+                    expected_date = self.get_expected_fresh_date()
+                    is_fresh = last_date >= expected_date
                     
                     # 2. Is it deep enough? (Does it cover the start date we need?)
                     # Note: Allow 5 days buffer for holidays/weekends divergence
@@ -141,6 +180,8 @@ class DataProvider:
         if include_live:
             if not self.auth:
                  print(f"[Data] Auth missing. Skipping live price.")
+            elif not self.is_trading_day(today.date()):
+                 pass # Skip appending fake live candles on weekends and holidays
             else:
                  current_price = self.get_realtime_price(symbol)
                  if current_price and current_price > 0:

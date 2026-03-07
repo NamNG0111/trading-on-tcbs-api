@@ -250,7 +250,7 @@ class StockTradingClient(TCBSClient):
             
             if response.status_code == 200:
                 data = response.json()
-                return data.get('data', [])
+                return data.get('data', data)
             else:
                 await self.logger.log_error(f"Failed to get stock positions: {response.status_code}")
                 return []

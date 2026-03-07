@@ -5,7 +5,7 @@ import asyncio
 from typing import Dict, Any, Optional
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
 from trading_on_tcbs_api.stock_system_v2.config import TOKEN_FILE, BASE_DIR
-from trading_on_tcbs_api.stock_strategy.stock_api_client import StockTradingClient
+from trading_on_tcbs_api.stock_system_v2.core.stock_api_client import StockTradingClient
 from trading_on_tcbs_api.utils.config_manager import get_config_manager
 from pathlib import Path
 
@@ -34,7 +34,7 @@ class AccountManager:
         if self.mock_mode:
             print(f"[Account] Initial Cash: {self.cash:,.0f} VND")
 
-    async def sync_from_api(self):
+    async def sync_from_api(self, target_account: str = None):
         """
         Attempt to fetch Real Assets from TCBS API.
         Updates self.cash, self.positions, self.buying_power.
@@ -98,6 +98,9 @@ class AccountManager:
             data_found = False
 
             for acc_id in accounts_to_probe:
+                if target_account and acc_id != target_account:
+                    continue
+                    
                 client.account_no = acc_id
                 
                 # Cash
