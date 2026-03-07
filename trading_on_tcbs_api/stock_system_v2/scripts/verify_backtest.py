@@ -5,9 +5,10 @@ import sys
 # Shim for direct execution
 if __name__ == "__main__" and (__package__ is None or __package__ == ""):
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    sys.path.insert(0, parent_dir)
-    __package__ = "stock_system_v2"
+    # Go up 3 levels from scripts/ to repo root
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
 
 from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
 from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAStrategy
