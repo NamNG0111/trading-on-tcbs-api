@@ -3,6 +3,7 @@ import pandas as pd
 from typing import List, Dict, Any
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.strategies.strategy import SignalStrategy
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 
 class MarketScanner:
     """
@@ -11,6 +12,7 @@ class MarketScanner:
     def __init__(self, strategy: SignalStrategy, auth=None):
         self.strategy = strategy
         self.data_provider = DataProvider(auth=auth)
+        self.indicator_engine = IndicatorEngine()
 
     def scan(self, symbols: List[str]) -> List[Dict[str, Any]]:
         """
@@ -32,7 +34,10 @@ class MarketScanner:
                 if df.empty:
                     continue
                     
-                # 2. Run Strategy
+                # 1b. Compute centralized indicators via pandas-ta
+                df = self.indicator_engine.append_indicators(df)
+                    
+                # 2. Run Strategy (now reading pre-computed columns)
                 df_sig = self.strategy.generate_signals(df)
                 
                 if df_sig.empty:

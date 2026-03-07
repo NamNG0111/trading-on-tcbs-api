@@ -26,13 +26,15 @@ class VolumeBoomStrategy(SignalStrategy):
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         
-        # Calculate Volume MA
-        # Default rolling mean includes the current row
-        df['vol_ma'] = df['volume'].rolling(window=self.window).mean()
+        # Volume MA is now pre-calculated by IndicatorEngine
+        vol_ma_col = f'vol_sma_{self.window}'
+        
+        if vol_ma_col not in df.columns:
+            raise ValueError(f"Missing required indicator column: {vol_ma_col}")
         
         # Identify Booming Volume
         # Avoid division by zero if MA is 0
-        df['vol_boom'] = (df['volume'] > (df['vol_ma'] * self.threshold_multiplier))
+        df['vol_boom'] = (df['volume'] > (df[vol_ma_col] * self.threshold_multiplier))
         
         # Initialize signal
         df['signal'] = 0

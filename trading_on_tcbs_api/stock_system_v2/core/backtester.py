@@ -6,6 +6,7 @@ from typing import List, Dict
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.strategies.strategy import SignalStrategy
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 
 class Backtester:
     """
@@ -14,7 +15,8 @@ class Backtester:
     
     def __init__(self, initial_capital: float = 100_000_000):
         self.initial_capital = initial_capital
-        self.data_provider = DataProvider(auth=None) # No auth needed for pure history backtest usually
+        self.data_provider = DataProvider(auth=None)  # No auth needed for pure history backtest usually
+        self.indicator_engine = IndicatorEngine()
         
     def run(self, strategy: SignalStrategy, symbol: str, days: int = 365) -> Dict:
         """
@@ -34,7 +36,10 @@ class Backtester:
             print(f"[Backtest] No data for {symbol}")
             return {}
 
-        # 2. Generate Signals
+        # 1b. Compute centralized indicators
+        df = self.indicator_engine.append_indicators(df)
+
+        # 2. Generate Signals (Strategy now reads pre-computed columns)
         df = strategy.generate_signals(df)
         if 'signal' not in df.columns:
             print("[Backtest] Strategy did not return 'signal' column")

@@ -22,8 +22,13 @@ class SimpleMAStrategy(SignalStrategy):
         df = data.copy()
         
         # Calculate MAs
-        df['short_ma'] = df['close'].rolling(window=self.short_window).mean()
-        df['long_ma'] = df['close'].rolling(window=self.long_window).mean()
+        # MAs are now pre-calculated by IndicatorEngine via pandas-ta
+        # pandas-ta lowercases names to e.g., 'sma_20', 'sma_50'
+        short_col = f'sma_{self.short_window}'
+        long_col = f'sma_{self.long_window}'
+        
+        if short_col not in df.columns or long_col not in df.columns:
+            raise ValueError(f"Missing required indicator columns: {short_col}, {long_col}")
         
         # Initialize signal column
         df['signal'] = 0
@@ -48,8 +53,8 @@ class SimpleMAStrategy(SignalStrategy):
         
         # So we only want to signal ON THE DAY of crossover
         df['regime'] = 0
-        df.loc[df['short_ma'] > df['long_ma'], 'regime'] = 1
-        df.loc[df['short_ma'] <= df['long_ma'], 'regime'] = -1
+        df.loc[df[short_col] > df[long_col], 'regime'] = 1
+        df.loc[df[short_col] <= df[long_col], 'regime'] = -1
         
         # Shift to compare with yesterday
         df['prev_regime'] = df['regime'].shift(1)

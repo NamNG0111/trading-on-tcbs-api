@@ -18,18 +18,11 @@ class RSIStrategy(SignalStrategy):
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         
-        # Calculate RSI (Pandas implementation)
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=self.period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=self.period).mean()
+        # RSI is now pre-calculated by IndicatorEngine via pandas-ta
+        rsi_col = f'rsi_{self.period}'
         
-        # Note: This is Simple Moving Average RSI. 
-        # For Wilder's Smoothing (standard RSI), we'd use ewm:
-        # gain = delta.where(delta > 0, 0).ewm(alpha=1/self.period, adjust=False).mean()
-        # loss = -delta.where(delta < 0, 0).ewm(alpha=1/self.period, adjust=False).mean()
-        
-        rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
+        if rsi_col not in df.columns:
+            raise ValueError(f"Missing required indicator column: {rsi_col}")
         
         # Initialize signal
         df['signal'] = 0
@@ -39,14 +32,14 @@ class RSIStrategy(SignalStrategy):
         # Sell when RSI > 70
         
         # To avoid spamming Buy every day it's < 30, we should detect ENTRY
-        df['prev_rsi'] = df['rsi'].shift(1)
+        df['prev_rsi'] = df[rsi_col].shift(1)
         
         # Buy: Yesterday >= 30, Today < 30 (Entering Oversold) 
         # OR Yesterday < 30, Today >= 30 (Exiting Oversold - traditional signal)
         # Let's use "Exiting Oversold" (Reversal)
-        df.loc[(df['prev_rsi'] < self.oversold) & (df['rsi'] >= self.oversold), 'signal'] = 1
+        df.loc[(df['prev_rsi'] < self.oversold) & (df[rsi_col] >= self.oversold), 'signal'] = 1
         
         # Sell: Exiting Overbought
-        df.loc[(df['prev_rsi'] > self.overbought) & (df['rsi'] <= self.overbought), 'signal'] = -1
+        df.loc[(df['prev_rsi'] > self.overbought) & (df[rsi_col] <= self.overbought), 'signal'] = -1
         
         return df
