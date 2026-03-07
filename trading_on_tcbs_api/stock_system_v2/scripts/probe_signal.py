@@ -1,12 +1,14 @@
 
 import pandas as pd
 from trading_on_tcbs_api.stock_system_v2.core.backtester import DataProvider
-from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
+from trading_on_tcbs_api.stock_system_v2.strategies import SimpleMAStrategy, VolumeBoomStrategy
 
 def probe():
     provider = DataProvider()
+    engine = IndicatorEngine()
     df = provider.get_historical_data("HPG", days=730)
+    df = engine.append_indicators(df)
     
     # Run individual strategies
     ma = SimpleMAStrategy(short_window=20, long_window=50)

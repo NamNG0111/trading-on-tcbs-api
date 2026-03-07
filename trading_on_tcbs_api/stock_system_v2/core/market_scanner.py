@@ -2,7 +2,7 @@
 import pandas as pd
 from typing import List, Dict, Any
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
-from trading_on_tcbs_api.stock_system_v2.strategies.strategy import SignalStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies import SignalStrategy
 from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 
 class MarketScanner:

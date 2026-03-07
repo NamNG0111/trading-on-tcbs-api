@@ -19,10 +19,12 @@ from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanne
 from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
 from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
 from trading_on_tcbs_api.stock_system_v2.execution.order_tracker import OrderTracker
-from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.rsi_strategy import RSIStrategy
-from trading_on_tcbs_api.stock_system_v2.strategies.combined_strategy import CombinedStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies import (
+    SimpleMAStrategy,
+    VolumeBoomStrategy,
+    RSIStrategy,
+    CombinedStrategy
+)
 
 class AutoTrader:
     def __init__(self, safe_mode=True):
