@@ -15,6 +15,7 @@ from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAS
 from trading_on_tcbs_api.stock_system_v2.strategies.rsi_strategy import RSIStrategy
 from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
 from trading_on_tcbs_api.stock_system_v2.strategies.combined_strategy import CombinedStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies.dip_buy_strategy import DipBuyStrategy
 
 def verify():
     print("Initializing Backtester...")
@@ -40,13 +41,18 @@ def verify():
     # We want:
     # BUY if MA Cross AND Volume Boom
     # SELL if RSI Overbought (ignore MA/Vol for exit)
-    strategy = CombinedStrategy(
-        strategies=[], # No common strategies
-        buy_strategies=[ma, vol],
-        sell_strategies=[rsi],
-        buy_mode="AND", 
-        sell_mode="OR"
-    )
+    # strategy = CombinedStrategy(
+    #     strategies=[], # No common strategies
+    #     buy_strategies=[ma, vol],
+    #     sell_strategies=[rsi],
+    #     buy_mode="AND", 
+    #     sell_mode="OR"
+    # )
+    
+    # --- Option 4: Dip Buy Strategy (Test New Feature) ---
+    print(f"\n---------- Strategy: Dip Buy (SMA 20, Drop 10%) on {symbol} ----------")
+    strategy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
+    
     
     report = backtester.run(strategy, symbol, days=days)
     

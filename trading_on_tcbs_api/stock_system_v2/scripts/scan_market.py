@@ -16,6 +16,7 @@ from trading_on_tcbs_api.stock_system_v2.strategies.ma_strategy import SimpleMAS
 from trading_on_tcbs_api.stock_system_v2.strategies.volume_strategy import VolumeBoomStrategy
 from trading_on_tcbs_api.stock_system_v2.strategies.rsi_strategy import RSIStrategy
 from trading_on_tcbs_api.stock_system_v2.strategies.combined_strategy import CombinedStrategy
+from trading_on_tcbs_api.stock_system_v2.strategies.dip_buy_strategy import DipBuyStrategy
 
 # VN30 List (Approximate)
 VN30 = [
@@ -43,13 +44,16 @@ def main():
     
     # Buy: MA Cross AND Volume Boom
     # Sell: RSI Overbought (Profit Taking)
-    strategy = CombinedStrategy(
-        strategies=[],
-        buy_strategies=[vol],
-        sell_strategies=[rsi],
-        buy_mode="AND", 
-        sell_mode="OR"
-    )
+    # strategy = CombinedStrategy(
+    #     strategies=[],
+    #     buy_strategies=[vol],
+    #     sell_strategies=[rsi],
+    #     buy_mode="AND", 
+    #     sell_mode="OR"
+    # )
+    
+    # Use New Dip Buy Strategy for Today's Scan
+    strategy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
     
     # 2. Initialize Scanner with Auth
     scanner = MarketScanner(strategy=strategy, auth=auth)
