@@ -128,19 +128,19 @@ ehthumbs.db
 Desktop.ini
 
 # SENSITIVE CONFIGURATION FILES
-config/credentials.yaml
-config/token.json
-config/spread_dca.json
+**/config/credentials.yaml
+**/config/token.json
+**/config/spread_dca.json
 *.key
 *.pem
 *.p12
 
 # RUNTIME DATA FILES
 logs/
-data/historical/
-data/cache/
-data/backups/
-data/tick_data.json
+**/data/historical/
+**/data/cache/
+**/data/backups/
+**/data/tick_data.json
 
 # TEMPORARY FILES
 temp/

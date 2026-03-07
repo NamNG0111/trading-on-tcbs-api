@@ -1,3 +1,0 @@
-time,order_id,symbol,side,price,volume,status,note
-2026-02-03 09:33:10,test_123456,HPG,BUY,26000,100,success,Unit Test Order
-2026-02-03 14:10:02,test_123456,HPG,BUY,26000,100,success,Unit Test Order
