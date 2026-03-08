@@ -23,6 +23,22 @@ VN30 = [
     "VIC", "VJC", "VNM", "VPB", "VRE"
 ]
 
+# my current list
+
+stock_list = [
+    "TCX", "TCB", "BAF", "DXG", "MWG", "TPB", "VCI", "SHS", "EIB", "HDB",
+    "BID", "DBC", "VIX", "GEX", "GEL", "VPB", "MSN", "FPT", "HPG", "MBB",
+    "ACB", "CTG", "DGC", "GAS", "POW", "LPB", "SHB", "SSI", "STB", "VCB",
+    "VIC", "VHM", "VRE", "VPL", "VIB", "VNM", "VJC", "GVR", "BMP", "PVT",
+    "VCK", "VPX", "DPG", "HAG", "FRT", "OCB", "VTP", "CTR", "VGI", "HPA",
+    "CTS", "FOX", "HCM", "PAN", "GEE", "VSC", "HAH", "VGC", "PC1", "CII",
+    "MBS", "ORS", "GMD", "KHG", "PNJ", "MSB", "PLX", "KBC", "CEO", "PDR",
+    "HDG", "BCM", "KDH", "NVL", "NLG", "DXS", "HDC", "VCG", "CTD", "HHV",
+    "C4G", "FCN", "NKG", "HSG", "NTL", "VGS", "VND", "DSE", "VDS", "VFS",
+    "DSC", "BSI", "DCM", "DPM", "BFC", "PVD", "PVS", "FMC", "MPC", "ANV",
+    "VHC", "TNG", "TCM"
+]
+
 def main():
     print(f"--- DAILY MARKET SCANNER (VN30) ---")
     
@@ -39,13 +55,13 @@ def main():
     
     # Buy: Price Drops 10% from SMA(20) AND Volume Booms (10% over Vol_SMA)
     # Sell: Price crosses above SMA(20)
-    dip_buy = DipBuyStrategy(sma_window=20, drop_pct=10.0)
+    dip_buy = DipBuyStrategy(sma_window=20, drop_pct=5.0)
     vol_boom = VolumeBoomStrategy(window=20, threshold_pct=10.0)
     sma_exit = SimpleMAStrategy(short_window=1, long_window=20, invert=True)
     
     strategy = CombinedStrategy(
         strategies=[],
-        buy_strategies=[dip_buy, vol_boom],
+        buy_strategies=[dip_buy],
         sell_strategies=[sma_exit],
         buy_mode="AND", 
         sell_mode="OR"
@@ -55,8 +71,8 @@ def main():
     scanner = MarketScanner(strategy=strategy, auth=auth)
     
     # 3. Run Scan
-    # Use real VN30 list
-    symbols = VN30
+    # Use list u wanted to run
+    symbols = stock_list
     
     # Allow overriding symbols via command line args
     if len(sys.argv) > 1:
@@ -69,13 +85,19 @@ def main():
     df_results = scanner.scan_to_df(symbols)
     
     if not df_results.empty:
-        print("\n" + "="*50)
-        print("SCAN RESULTS (DataFrame)")
-        print("="*50)
+        # Sort by drop severity if the context column exists
+        if '%_from_sma20' in df_results.columns:
+            df_results = df_results.sort_values(by='%_from_sma20', ascending=True)
+            
+        print("\n" + "="*80)
+        print("SCAN RESULTS (Enriched Context)")
+        print("="*80)
         print(df_results.to_markdown(index=False) if hasattr(df_results, 'to_markdown') else df_results)
-        print("="*50)
+        print("="*80)
+        return df_results
     else:
         print("\n[Scanner] No signals found.")
+        return df_results
 
 if __name__ == "__main__":
-    main()
+    signal = main()

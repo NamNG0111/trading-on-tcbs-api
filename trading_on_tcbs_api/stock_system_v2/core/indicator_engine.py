@@ -42,28 +42,46 @@ class IndicatorEngine:
         if "sma" in self.config:
             for length in self.config["sma"]:
                 # pandas-ta automatically names the column 'SMA_20'
-                data.ta.sma(length=length, append=True)
+                if len(data) >= length:
+                    data.ta.sma(length=length, append=True)
+                else:
+                    data[f"SMA_{length}"] = float('nan')
 
         # EMA
         if "ema" in self.config:
             for length in self.config["ema"]:
-                data.ta.ema(length=length, append=True)
+                if len(data) >= length:
+                    data.ta.ema(length=length, append=True)
+                else:
+                    data[f"EMA_{length}"] = float('nan')
 
         # RSI
         if "rsi" in self.config:
             for length in self.config["rsi"]:
                 # pandas-ta names it 'RSI_14'
-                data.ta.rsi(length=length, append=True)
+                if len(data) >= length:
+                    data.ta.rsi(length=length, append=True)
+                else:
+                    data[f"RSI_{length}"] = float('nan')
 
         # MACD
         if "macd" in self.config:
             for params in self.config["macd"]:
-                data.ta.macd(
-                    fast=params.get("fast", 12),
-                    slow=params.get("slow", 26),
-                    signal=params.get("signal", 9),
-                    append=True
-                )
+                slow = params.get("slow", 26)
+                if len(data) >= slow:
+                    data.ta.macd(
+                        fast=params.get("fast", 12),
+                        slow=slow,
+                        signal=params.get("signal", 9),
+                        append=True
+                    )
+                else:
+                    # Provide fallback column names pandas-ta normally generates
+                    fast = params.get("fast", 12)
+                    sig = params.get("signal", 9)
+                    data[f"MACD_{fast}_{slow}_{sig}"] = float('nan')
+                    data[f"MACDh_{fast}_{slow}_{sig}"] = float('nan')
+                    data[f"MACDs_{fast}_{slow}_{sig}"] = float('nan')
                 
         # Volume MA (Requires raw rolling, pandas-ta SMA is for close prices by default unless specified)
         if "vol_ma" in self.config:

@@ -55,12 +55,27 @@ class MarketScanner:
                 if signal != 0:
                     # Found a signal!
                     signal_type = "BUY" if signal == 1 else "SELL"
-                    results.append({
+                    
+                    # Base result
+                    res = {
+                        "date": last_row['time'].strftime('%Y-%m-%d') if hasattr(last_row.get('time'), 'strftime') else str(last_row.get('time', '')),
                         "symbol": symbol,
                         "signal": signal_type,
-                        "price": last_row['close'],
-                        "date": last_row['time'].strftime('%Y-%m-%d')
-                    })
+                        "price": last_row.get('close', 0.0),
+                    }
+                    
+                    # Automatically extract technical indicators required by the strategy
+                    required_cols = self.strategy.get_required_indicators()
+                    for col in required_cols:
+                        if col in last_row.index:
+                            res[col] = last_row[col]
+                            
+                        # Helpful specific context: Distance from SMA if it's the 20-day SMA used in DipBuy
+                        if col == 'sma_20' and pd.notna(last_row.get('sma_20')) and last_row['sma_20'] > 0:
+                            dist_pct = ((last_row['close'] / last_row['sma_20']) - 1) * 100
+                            res['%_from_sma20'] = round(dist_pct, 2)
+
+                    results.append(res)
                     # print(f"\n  ! Found {signal_type} for {symbol} at {last_row['close']}")
                     
             except Exception as e:

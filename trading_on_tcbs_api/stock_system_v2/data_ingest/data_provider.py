@@ -174,7 +174,8 @@ class DataProvider:
                     
                     # 2. Is it deep enough? (Does it cover the start date we need?)
                     # Note: Allow 5 days buffer for holidays/weekends divergence
-                    is_deep_enough = first_date <= (requested_start + timedelta(days=5))
+                    is_ipo_reached = 'is_ipo' in df.columns and df['is_ipo'].any()
+                    is_deep_enough = first_date <= (requested_start + timedelta(days=5)) or is_ipo_reached
                     
                     if is_fresh and is_deep_enough:
                         # Cache is good
@@ -206,6 +207,18 @@ class DataProvider:
                                  df[col] = df[col] * 1000
                     
                     df['time'] = pd.to_datetime(df['time'])
+                    
+                    # 1b. Mark IPO truncation
+                    # If we asked for 365 days of data but the API only returned 50 days, 
+                    # it means the stock was recently listed. We mark it so we don't re-fetch endlessly.
+                    fetched_first = df['time'].min().date()
+                    req_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+                    if fetched_first > req_start + timedelta(days=10):
+                        df['is_ipo'] = True
+                        print(f"[Data] Marked {symbol} as IPO limited (Listed: {fetched_first})")
+                    else:
+                        df['is_ipo'] = False
+                        
                     df.to_csv(cache_file, index=False)
             except Exception as e:
                 print(f"[Data] Error fetching data: {e}")

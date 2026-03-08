@@ -27,3 +27,10 @@ class SignalStrategy(ABC):
         Optional: Calculate technical indicators or strategy-specific metrics.
         """
         return {}
+        
+    def get_required_indicators(self) -> list:
+        """
+        Return a list of column names this strategy requires from the DataFrame
+        (e.g. ['sma_20', 'rsi_14']). Used for formatting output context.
+        """
+        return []

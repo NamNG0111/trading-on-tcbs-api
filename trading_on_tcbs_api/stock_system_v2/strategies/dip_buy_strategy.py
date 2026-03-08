@@ -18,6 +18,9 @@ class DipBuyStrategy(SignalStrategy):
         self.drop_pct = drop_pct
         self.drop_multiplier = 1.0 - (drop_pct / 100.0)
         
+    def get_required_indicators(self) -> list:
+        return [f'sma_{self.sma_window}']
+        
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         

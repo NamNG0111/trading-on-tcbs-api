@@ -30,6 +30,13 @@ class CombinedStrategy(SignalStrategy):
         self.buy_mode = buy_mode.upper()
         self.sell_mode = sell_mode.upper()
         
+    def get_required_indicators(self) -> list:
+        reqs = set()
+        for s in self.common_strategies + self.buy_only_strategies + self.sell_only_strategies:
+            if hasattr(s, 'get_required_indicators'):
+                reqs.update(s.get_required_indicators())
+        return list(reqs)
+        
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         
