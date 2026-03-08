@@ -23,6 +23,12 @@ class VolumeBoomStrategy(SignalStrategy):
         self.window = window
         self.threshold_multiplier = 1.0 + (threshold_pct / 100.0)
         
+        self.name = "Volume Breakout"
+        self.description = f"BUY when Volume exceeds {self.window}-day Volume SMA by {threshold_pct}%."
+        
+    def get_required_indicators(self) -> list:
+        return ['volume', f'vol_sma_{self.window}', '%_vol_increase']
+        
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         
@@ -31,6 +37,9 @@ class VolumeBoomStrategy(SignalStrategy):
         
         if vol_ma_col not in df.columns:
             raise ValueError(f"Missing required indicator column: {vol_ma_col}")
+        # Context Column
+        df['%_vol_increase'] = ((df['volume'] / df[vol_ma_col]) - 1) * 100
+        df['%_vol_increase'] = df['%_vol_increase'].round(2)
         
         # Identify Booming Volume
         # Avoid division by zero if MA is 0

@@ -9,8 +9,11 @@ class MarketScanner:
     """
     Scans a list of stocks using a specific SignalStrategy.
     """
-    def __init__(self, strategy: SignalStrategy, auth=None):
-        self.strategy = strategy
+    def __init__(self, strategy: SignalStrategy = None, auth=None, strategies: Dict[str, SignalStrategy] = None):
+        self.strategies = strategies or {}
+        if strategy:
+            self.strategies["Default"] = strategy
+            
         self.data_provider = DataProvider(auth=auth)
         self.indicator_engine = IndicatorEngine()
 
@@ -19,7 +22,7 @@ class MarketScanner:
         Scan the list of symbols for TODAY's signals.
         """
         results = []
-        print(f"[Scanner] Scanning {len(symbols)} symbols with {type(self.strategy).__name__}...")
+        print(f"[Scanner] Scanning {len(symbols)} symbols with {len(self.strategies)} strategies...")
         
         # 1. Flush any old prices from previous loops
         self.data_provider.clear_realtime_cache()
@@ -42,40 +45,47 @@ class MarketScanner:
                 # 1b. Compute centralized indicators via pandas-ta
                 df = self.indicator_engine.append_indicators(df)
                     
-                # 2. Run Strategy (now reading pre-computed columns)
-                df_sig = self.strategy.generate_signals(df)
-                
-                if df_sig.empty:
-                    continue
+                # 2. Run All Strategies
+                original_cols = set(df.columns)
+                for strat_name, strat in self.strategies.items():
+                    df_sig = strat.generate_signals(df)
+                    added_cols = set(df_sig.columns) - original_cols
                     
-                # 3. Check Last Signal (Today)
-                last_row = df_sig.iloc[-1]
-                signal = last_row.get('signal', 0)
-                
-                if signal != 0:
-                    # Found a signal!
-                    signal_type = "BUY" if signal == 1 else "SELL"
+                    if df_sig.empty:
+                        continue
+                        
+                    # 3. Check Last Signal (Today)
+                    last_row = df_sig.iloc[-1]
+                    signal = last_row.get('signal', 0)
                     
-                    # Base result
-                    res = {
-                        "date": last_row['time'].strftime('%Y-%m-%d') if hasattr(last_row.get('time'), 'strftime') else str(last_row.get('time', '')),
-                        "symbol": symbol,
-                        "signal": signal_type,
-                        "price": last_row.get('close', 0.0),
-                    }
-                    
-                    # Automatically extract technical indicators required by the strategy
-                    required_cols = self.strategy.get_required_indicators()
-                    for col in required_cols:
-                        if col in last_row.index:
-                            res[col] = last_row[col]
-                            
-                        # Helpful specific context: Distance from SMA if it's the 20-day SMA used in DipBuy
-                        if col == 'sma_20' and pd.notna(last_row.get('sma_20')) and last_row['sma_20'] > 0:
-                            dist_pct = ((last_row['close'] / last_row['sma_20']) - 1) * 100
-                            res['%_from_sma20'] = round(dist_pct, 2)
+                    if signal != 0:
+                        # Found a signal!
+                        signal_type = "BUY" if signal == 1 else "SELL"
+                        
+                        # Base result
+                        res = {
+                            "date": last_row['time'].strftime('%Y-%m-%d') if hasattr(last_row.get('time'), 'strftime') else str(last_row.get('time', '')),
+                            "symbol": symbol,
+                            "strategy": strat_name,
+                            "signal": signal_type,
+                            "price": last_row.get('close', 0.0),
+                        }
+                        
+                        # Extract officially required indicators
+                        required_cols = strat.get_required_indicators() if hasattr(strat, 'get_required_indicators') else []
+                        for col in required_cols:
+                            if col in last_row.index:
+                                res[col] = last_row[col]
+                                
+                        # Proactively capture ANY dynamic columns specifically produced by THIS strategy's math
+                        # This safely ignores global upstream indicators not explicitly requested
+                        for col in added_cols:
+                            col_str = str(col)
+                            if col_str not in ['signal', 'regime', 'prev_regime'] and not col_str.endswith('_sig') and col_str in last_row.index:
+                                if col_str not in res:
+                                    res[col_str] = last_row[col_str]
 
-                    results.append(res)
+                        results.append(res)
                     # print(f"\n  ! Found {signal_type} for {symbol} at {last_row['close']}")
                     
             except Exception as e:
@@ -84,21 +94,30 @@ class MarketScanner:
         print(f"\n[Scanner] Completed. Found {len(results)} signals.")
         return results
 
-    def scan_to_df(self, symbols: List[str]) -> pd.DataFrame:
+    def scan_to_df(self, symbols: List[str]) -> Dict[str, pd.DataFrame]:
         """
-        Run scan and return results as a Pandas DataFrame.
+        Run scan and return results as a dictionary of Pandas DataFrames grouped by strategy.
         """
         results = self.scan(symbols)
         if not results:
-            return pd.DataFrame()
+            return {}
         
         df = pd.DataFrame(results)
-        # Reorder columns for readability if possible
-        cols = ['date', 'symbol', 'signal', 'price']
-        # Only keep columns that exist in df (in case of empty or different keys)
-        cols = [c for c in cols if c in df.columns] + [c for c in df.columns if c not in cols]
-        df = df[cols]
-        return df
+        
+        strategy_dfs = {}
+        for strategy_name, group in df.groupby('strategy'):
+            # Drop purely NaN columns (they belong to other strategies)
+            group_cleaned = group.dropna(axis=1, how='all')
+            # Remove the strategy column since it's the dict key
+            group_cleaned = group_cleaned.drop(columns=['strategy'])
+            
+            # Reorder columns for readability
+            cols = ['date', 'symbol', 'signal', 'price']
+            cols = [c for c in cols if c in group_cleaned.columns] + [c for c in group_cleaned.columns if c not in cols]
+            
+            strategy_dfs[strategy_name] = group_cleaned[cols].reset_index(drop=True)
+            
+        return strategy_dfs
 
     def print_results(self, results: List[Dict[str, Any]]):
         """

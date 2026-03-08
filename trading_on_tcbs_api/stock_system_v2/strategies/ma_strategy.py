@@ -14,6 +14,17 @@ class SimpleMAStrategy(SignalStrategy):
         self.long_window = long_window
         self.invert = invert
         
+        self.name = "SMA Crossover" if not invert else "SMA Exit"
+        self.description = f"BUY when {short_window}-MA > {long_window}-MA." if not invert else f"SELL when {short_window}-MA sweeps below {long_window}-MA."
+        
+    def get_required_indicators(self) -> list:
+        reqs = []
+        if self.short_window > 1:
+            reqs.append(f'sma_{self.short_window}')
+        if self.long_window > 1:
+            reqs.append(f'sma_{self.long_window}')
+        return reqs
+        
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Generates MA crossover signals.

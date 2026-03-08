@@ -26,6 +26,7 @@ class IndicatorEngine:
             "rsi": [14],
             "macd": [],      # e.g., [{"fast": 12, "slow": 26, "signal": 9}]
             "vol_ma": [20],  # Volume MA
+            "roc": [3],      # Rate of Change (multi-day returns)
         }
 
     def append_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -82,7 +83,14 @@ class IndicatorEngine:
                     data[f"MACD_{fast}_{slow}_{sig}"] = float('nan')
                     data[f"MACDh_{fast}_{slow}_{sig}"] = float('nan')
                     data[f"MACDs_{fast}_{slow}_{sig}"] = float('nan')
-                
+        # ROC (Rate of Change)
+        if "roc" in self.config:
+            for length in self.config["roc"]:
+                if len(data) >= length:
+                    data.ta.roc(length=length, append=True)
+                else:
+                    data[f"ROC_{length}"] = float('nan')
+                    
         # Volume MA (Requires raw rolling, pandas-ta SMA is for close prices by default unless specified)
         if "vol_ma" in self.config:
             for length in self.config["vol_ma"]:

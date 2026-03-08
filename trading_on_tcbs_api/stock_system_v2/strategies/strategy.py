@@ -8,6 +8,13 @@ class SignalStrategy(ABC):
     User must implement generate_signals method.
     """
     
+    name: str = "Generic Strategy"
+    description: str = "Base strategy"
+    
+    def get_brief(self) -> str:
+        """Return a formatted brief explaining the strategy's logic."""
+        return f"{self.name}: {self.description}"
+        
     @abstractmethod
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """

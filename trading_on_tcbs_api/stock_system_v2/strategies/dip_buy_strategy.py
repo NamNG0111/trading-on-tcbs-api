@@ -18,8 +18,11 @@ class DipBuyStrategy(SignalStrategy):
         self.drop_pct = drop_pct
         self.drop_multiplier = 1.0 - (drop_pct / 100.0)
         
+        self.name = "Dip Buy Strategy"
+        self.description = f"BUY when Price drops > {self.drop_pct}% below {self.sma_window}-day SMA."
+        
     def get_required_indicators(self) -> list:
-        return [f'sma_{self.sma_window}']
+        return [f'sma_{self.sma_window}', f'%_from_sma{self.sma_window}']
         
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
@@ -34,8 +37,12 @@ class DipBuyStrategy(SignalStrategy):
             
         # Initialize signal
         df['signal'] = 0
+        # 2. Add Context Column
+        context_col = f'%_from_sma{self.sma_window}'
+        df[context_col] = ((df['close'] / df[sma_col]) - 1) * 100
+        df[context_col] = df[context_col].round(2)
         
-        # 2. Buy Logic: Close is below (SMA * (1 - drop_pct))
+        # 3. Buy Logic: Close is below (SMA * (1 - drop_pct))
         target_buy_price = df[sma_col] * self.drop_multiplier
         df.loc[df['close'] < target_buy_price, 'signal'] = 1
         

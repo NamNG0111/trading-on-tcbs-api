@@ -29,13 +29,26 @@ class CombinedStrategy(SignalStrategy):
         
         self.buy_mode = buy_mode.upper()
         self.sell_mode = sell_mode.upper()
+        self.name = "Combined Strategy"
+        self.description = "Aggregates underlying strategies."
+        
+    def get_brief(self) -> str:
+        briefs = []
+        for s in self.common_strategies + self.buy_only_strategies:
+            if hasattr(s, 'get_brief'):
+                briefs.append(s.get_brief())
+        if not briefs:
+            return super().get_brief()
+        return " AND ".join(briefs) if self.buy_mode == "AND" else " OR ".join(briefs)
         
     def get_required_indicators(self) -> list:
-        reqs = set()
+        reqs = []
         for s in self.common_strategies + self.buy_only_strategies + self.sell_only_strategies:
             if hasattr(s, 'get_required_indicators'):
-                reqs.update(s.get_required_indicators())
-        return list(reqs)
+                for req in s.get_required_indicators():
+                    if req not in reqs:
+                        reqs.append(req)
+        return reqs
         
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
@@ -44,9 +57,16 @@ class CombinedStrategy(SignalStrategy):
         def get_sub_results(strat_list, prefix):
             results = []
             for i, strat in enumerate(strat_list):
-                res = strat.generate_signals(data)
+                # Pass df explicitly so it accumulates any upstream added columns
+                res = strat.generate_signals(df)
                 col = f'{prefix}_{i}_sig'
                 df[col] = res['signal']
+                
+                # Propagate contextual columns added by the sub-strategy forward into df
+                new_cols = [c for c in res.columns if c not in df.columns]
+                for c in new_cols:
+                    df[c] = res[c]
+                    
                 results.append(col)
             return results
 
@@ -69,7 +89,7 @@ class CombinedStrategy(SignalStrategy):
             else: # OR
                 is_buy = (df[buy_pool] == 1).any(axis=1)
         else:
-            is_buy = False
+            is_buy = pd.Series(False, index=df.index)
             
         # --- SELL LOGIC ---
         if sell_pool:
@@ -78,7 +98,7 @@ class CombinedStrategy(SignalStrategy):
             else: # OR
                 is_sell = (df[sell_pool] == -1).any(axis=1)
         else:
-            is_sell = False
+            is_sell = pd.Series(False, index=df.index)
             
         # Apply Signals (Sell Priority)
         df.loc[is_buy, 'signal'] = 1
