@@ -22,47 +22,9 @@ class DataProvider:
         self.auth = auth  # Optional auth for real-time data
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
-        self._live_price_cache = {}  # {symbol: {'price': float, 'time': datetime}}
-
-    def clear_realtime_cache(self):
-        """Manually flush the realtime price cache to guarantee fresh data on the next fetch."""
-        self._live_price_cache.clear()
-
-    def prefetch_realtime_prices(self, symbols: list):
-        """Batch fetch realtime prices for multiple symbols to minimize API calls."""
-        if not self.auth or not self.auth.token or not symbols:
-            return
-            
-        # TCBS can typically handle up to 50 tickers in one comma-separated string
-        chunk_size = 50
-        for i in range(0, len(symbols), chunk_size):
-            chunk = symbols[i:i+chunk_size]
-            url = f"{config.BASE_URL}/tartarus/v1/tickerCommons"
-            params = {'tickers': ",".join(chunk)}
-            headers = {
-                "Authorization": f"Bearer {self.auth.token}",
-                "Content-Type": "application/json"
-            }
-            try:
-                import requests
-                response = requests.get(url, headers=headers, params=params, timeout=5)
-                if response.status_code == 200:
-                    data = response.json().get("data", [])
-                    now = datetime.now()
-                    for item in data:
-                        sym = item.get('ticker')
-                        price = item.get('matchPrice') or item.get('refPrice')
-                        if sym and price:
-                            self._live_price_cache[sym] = {'price': price, 'time': now}
-            except Exception as e:
-                print(f"[Data] Error prefetching realtime prices: {e}")
 
     def get_realtime_price(self, symbol: str) -> Optional[float]:
-        """Fetch real-time price from TCBS (Checks prefetch cache first)."""
-        # Check cache (Populated by prefetch_realtime_prices)
-        if symbol in self._live_price_cache:
-            return self._live_price_cache[symbol]['price']
-
+        """Fetch real-time price from TCBS."""
         if not self.auth or not self.auth.token:
             return None
             
@@ -84,9 +46,6 @@ class DataProvider:
                     # Fallback to refPrice if no match (e.g. pre-market)
                     if not price:
                         price = data[0].get('refPrice')
-                    
-                    if price: # Update cache
-                         self._live_price_cache[symbol] = {'price': price, 'time': datetime.now()}
                     return price
                 else:
                     print(f"[Data] Realtime response empty: {response.json()}")
@@ -249,9 +208,15 @@ class DataProvider:
                  else:
                      print(f"[Data] Failed to fetch live price for {symbol} (Returned: {current_price})")
                      
-        # 4. Truncate to requested number of days
-        df = df[df['time'] >= start_date].reset_index(drop=True)
         return df
+
+    def get_latest_price(self, symbol: str) -> Optional[float]:
+        """
+        Get the absolute latest price (snapshot). 
+        For now using last close of history, or could rely on market_scanner.
+        """
+        # TODO: Integrate with MarketScanner for real-time
+        return 0.0
 
 if __name__ == "__main__":
     # Test
