@@ -56,6 +56,7 @@ class Backtester:
             forward_returns_days = [3, 5, 10, 20]
             
         forward_returns = {d: [] for d in forward_returns_days}
+        signal_details = []
         df_len = len(df)
         prices = df['close'].values
         signals = df['signal'].values
@@ -64,10 +65,22 @@ class Backtester:
         for idx in range(df_len):
             if signals[idx] == 1:
                 entry_price = prices[idx]
+                
+                # Capture the full raw row (Date, Close, RSI, SMA, Volume, etc)
+                # Convert the specific row to a dict for easy appending
+                row_dict = df.iloc[idx].to_dict()
+                row_dict['Ticker'] = symbol
+                
                 for d in forward_returns_days:
                     if idx + d < df_len:
                         exit_price = prices[idx + d]
-                        forward_returns[d].append((exit_price - entry_price) / entry_price)
+                        ret = (exit_price - entry_price) / entry_price
+                        forward_returns[d].append(ret)
+                        row_dict[f'Return_{d}D_pct'] = ret * 100
+                    else:
+                        row_dict[f'Return_{d}D_pct'] = None
+                        
+                signal_details.append(row_dict)
 
         # 3. Simulate Trades
         cash = self.initial_capital
@@ -249,7 +262,8 @@ class Backtester:
             'history_days': days,
             'forward_returns': forward_returns,
             'fixed_hold_results': fixed_hold_results,
-            'trades_log': trades # Return full log
+            'trades_log': trades, # Return full log
+            'signal_details': signal_details # <-- Full rich table of everything
         }
         
         return report

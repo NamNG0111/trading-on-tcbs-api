@@ -40,7 +40,7 @@ def main():
         strategies=[], buy_strategies=[dip_buy], sell_strategies=[sma_exit_buy_dip], buy_mode="AND", sell_mode="OR"
     )
     
-    vol_buy = VolumeBoomStrategy(window=20, threshold_pct=20.0)
+    vol_buy = VolumeBoomStrategy(window=20, threshold_pct=100.0)
     strat_vol = CombinedStrategy(
         strategies=[], buy_strategies=[vol_buy], sell_strategies=[sma_exit_basic], buy_mode="AND", sell_mode="OR"
     )
@@ -263,14 +263,46 @@ def main():
         if fixed_data:
             df_fixed = pd.DataFrame(fixed_data)
             df_fixed = df_fixed.sort_values(by=["Strategy", "Hold (Days)"])
-            
             print(f"================================================================================")
             print(f"FIXED N-DAY HOLD PORTFOLIO SIMULATION (Chronological Execution | 1 Trade at a time)")
             print(f"================================================================================")
             print(df_fixed.to_markdown(index=False))
             print(f"================================================================================\n")
+            
+    # --------------------------------------------------------------------------------
+    # EXPORT RAW SIGNALS LOG TO CSV
+    # --------------------------------------------------------------------------------
+    dict_details = {}
+    export_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
+    os.makedirs(export_dir, exist_ok=True)
     
-    return df_summary, df_fwd, df_fixed
+    for strat_name, reports in all_results.items():
+        strat_details = []
+        for r in reports:
+            if 'signal_details' in r:
+                strat_details.extend(r['signal_details'])
+                
+        if strat_details:
+            df_det = pd.DataFrame(strat_details)
+            # Reorder columns to put Ticker and time first
+            cols = df_det.columns.tolist()
+            if 'Ticker' in cols and 'time' in cols:
+                cols.insert(0, cols.pop(cols.index('Ticker')))
+                cols.insert(1, cols.pop(cols.index('time')))
+                df_det = df_det[cols]
+                
+            dict_details[strat_name] = df_det
+            
+            # Save to CSV
+            safe_name = "".join([c if c.isalnum() else "_" for c in strat_name])
+            csv_path = os.path.join(export_dir, f"{safe_name}_signals.csv")
+            df_det.to_csv(csv_path, index=False)
+            
+    if dict_details:
+        print(f"[*] Detailed strategy signals exported to: {export_dir}")
+        print(f"================================================================================\n")
+    
+    return df_summary, df_fwd, df_fixed, dict_details
 
 if __name__ == "__main__":
-    summary_strats, forward_return, fixed_return = main()
+    summary_strats, forward_return, fixed_return, detailed_signals = main()
