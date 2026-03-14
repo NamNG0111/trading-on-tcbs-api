@@ -5,6 +5,7 @@ from .volume_strategy import VolumeBoomStrategy
 from .dip_buy_strategy import DipBuyStrategy
 from .combined_strategy import CombinedStrategy
 from .cumulative_drop_strategy import CumulativeDropStrategy
+from .intraday_dip_strategy import IntradayDipStrategy
 
 __all__ = [
     "SignalStrategy",
@@ -13,5 +14,6 @@ __all__ = [
     "VolumeBoomStrategy",
     "DipBuyStrategy",
     "CombinedStrategy",
-    "CumulativeDropStrategy"
+    "CumulativeDropStrategy",
+    "IntradayDipStrategy"
 ]
