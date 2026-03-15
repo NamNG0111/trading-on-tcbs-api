@@ -24,7 +24,7 @@ from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
 # ==========================================
 # BACKTEST CONFIGURATION
 # ==========================================
-HISTORY_DAYS = 1825           # 5 years
+HISTORY_DAYS = 250           # 1 years
 LOOKBACK_DAYS = 250            # Rolling window for percentile calc (~1 year trading days)
 PERCENTILE = 90.0             # Dip must exceed this percentile to trigger BUY
 POSITION_SIZE = 100_000_000   # 100M VND per trade (for P&L estimation)
