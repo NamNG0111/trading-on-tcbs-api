@@ -212,3 +212,4 @@ results = scanner.scan(["FPT", "HPG"])
 # Method 2: Strategy-grouped DataFrames (preferred)
 df_dict = scanner.scan_to_df(["FPT", "HPG"])
 ```
+To

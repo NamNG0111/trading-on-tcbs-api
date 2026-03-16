@@ -9,6 +9,7 @@ from trading_on_tcbs_api.stock_system_v2.strategies import (
     SimpleMAStrategy,
     VolumeBoomStrategy,
     RSIStrategy,
+    RSIDivergenceStrategy,
     CombinedStrategy,
     DipBuyStrategy,
     CumulativeDropStrategy
@@ -113,6 +114,16 @@ def main():
         sell_mode="OR"
     )
     
+    # Strategy 6: RSI Divergence
+    rsi_div = RSIDivergenceStrategy(rsi_period=14, lookback=5, max_bars_between=30)
+    strat_rsi_div = CombinedStrategy(
+        strategies=[rsi_div],
+        buy_strategies=[],
+        sell_strategies=[],
+        buy_mode="AND",
+        sell_mode="OR"
+    )
+    
     # Package them all up!
     my_strategies = {
         f"DipBuy ({dip_buy.drop_pct}%)": strat_dip,
@@ -120,7 +131,8 @@ def main():
         f"RSI Basic (<{rsi_basic.oversold})": strat_rsi_basic,
         f"RSI Reversal (Entry)": strat_rsi_reversal,
         f"{roc_buy.days}-Day Drop ({roc_buy.drop_pct}%)": strat_roc,
-        f"SMA Crossover ({sma_cross.short_window}/{sma_cross.long_window})": strat_sma_cross
+        f"SMA Crossover ({sma_cross.short_window}/{sma_cross.long_window})": strat_sma_cross,
+        f"RSI Divergence (lookback={rsi_div.lookback})": strat_rsi_div
     }
     
     print("\n--- ACTIVE STRATEGIES CONFIGURATION ---")

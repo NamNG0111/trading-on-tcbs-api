@@ -244,7 +244,7 @@ class DataProvider:
                      # Check dates
                      if today.date() > last_time.date():
                          # Append new row
-                         print(f"[Data] Appending NEW LIVE CANDLE for {symbol}: {today.date()} @ {current_price}")
+                         # print(f"[Data] Appending NEW LIVE CANDLE for {symbol}: {today.date()} @ {current_price}")
                          new_row = {
                              'time': today, 
                              'open': current_price,
@@ -257,7 +257,7 @@ class DataProvider:
                      
                      elif today.date() == last_time.date():
                          # Update existing
-                         print(f"[Data] Updating TODAY'S CANDLE for {symbol}: {today.date()} @ {current_price}")
+                         # print(f"[Data] Updating TODAY'S CANDLE for {symbol}: {today.date()} @ {current_price}")
                          df.at[df.index[-1], 'close'] = current_price
                  else:
                      print(f"[Data] Failed to fetch live price for {symbol} (Returned: {current_price})")
