@@ -12,9 +12,8 @@ def verify_analytics():
     print("--- VERIFYING ANALYTICS LOGIC ---")
     
     # 1. Create Mock Ledger
-    mock_file = "data/ledger_test.csv"
-    data_root = os.path.dirname(config.DATA_DIR)
-    full_path = os.path.join(data_root, "ledger_test.csv")
+    mock_file = "ledger_test.csv"
+    full_path = os.path.join(config.EXPORT_DIR, mock_file)
     
     # Scenario:
     # 1. Buy 100 HPG @ 20,000 -> Hold

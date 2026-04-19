@@ -23,6 +23,7 @@ FORWARD_DAYS = [3, 5, 10, 20]    # N-Day holding periods to analyze after every 
 
 import numpy as np
 from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
+from trading_on_tcbs_api.stock_system_v2 import config
 from trading_on_tcbs_api.stock_system_v2.strategies import (
     SimpleMAStrategy,
     VolumeBoomStrategy,
@@ -285,7 +286,7 @@ def main():
     # EXPORT RAW SIGNALS LOG TO CSV
     # --------------------------------------------------------------------------------
     dict_details = {}
-    export_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
+    export_dir = config.EXPORT_DIR
     os.makedirs(export_dir, exist_ok=True)
     
     for strat_name, reports in all_results.items():

@@ -16,10 +16,8 @@ class OrderTracker:
         # We might want a separate folder or just putting it in data/ is fine.
         # Let's put it in data/ (parent of stocks) or just next to stocks.
         
-        # Let's default to a dedicated ledger file
-        # BASE_DIR/data/ledger.csv
-        data_root = os.path.dirname(config.DATA_DIR) # Go up from data/stocks to data/
-        self.ledger_file = os.path.join(data_root, "ledger.csv")
+        # Let's default to a dedicated ledger file in EXPORT_DIR
+        self.ledger_file = os.path.join(config.EXPORT_DIR, "ledger.csv")
         
         if not os.path.exists(self.ledger_file):
             self._create_ledger()

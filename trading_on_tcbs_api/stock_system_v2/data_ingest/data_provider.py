@@ -13,7 +13,7 @@ from trading_on_tcbs_api.stock_system_v2 import config
 class DataProvider:
     """
     Provides market data (Historical and Real-time) for the stock system.
-    Uses 'vnstock' library (Source: VCI) for historical data as TCBS API 
+    Uses 'vnstock' library (Source: KBS) for historical data as TCBS API 
     does not support history via Open API.
     """
     
@@ -187,14 +187,15 @@ class DataProvider:
                 df = pd.DataFrame()
         
         # 2. Fetch from Source if needed
+        data_source = 'KBS'
         if df.empty:
-            print(f"[Data] Fetching {symbol} from {start_date} to {end_date} (Source: VCI)...")
+            print(f"[Data] Fetching {symbol} from {start_date} to {end_date} (Source: {data_source})...")
             try:
                 # Rate Limit: 20 req/min => 1 req every 3s.
                 # We sleep to be safe.
                 time.sleep(3.1) 
                 
-                stock = Vnstock().stock(symbol=symbol, source='VCI')
+                stock = Vnstock().stock(symbol=symbol, source=data_source)
                 # Note: vnstock history end_date is inclusive
                 df = stock.quote.history(start=start_date, end=end_date, interval=resolution)
                 if df is not None and not df.empty:

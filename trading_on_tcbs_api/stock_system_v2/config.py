@@ -17,13 +17,32 @@ RISK_PARAMS = {
 TIMEFRAME = "1D"  # Daily candles
 
 import os
+import json
 
 # System Settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Go up one level to root
 DATA_DIR = os.path.join(BASE_DIR, "data", "stocks") # Consolidated data directory
-LOG_DIR = os.path.join(BASE_DIR, "trading_on_tcbs_api", "stock_system_v2", "logs")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
 TOKEN_FILE = os.path.join(BASE_DIR, "config", "token.json")  # Use ROOT token file
 CREDENTIALS_FILE = os.path.join(BASE_DIR, "config", "credentials.yaml") # Use ROOT credentials logic
+LOCAL_CONFIG_FILE = os.path.join(BASE_DIR, "config", "local_config.json")
+
+# Load Local Config for Export Paths
+EXPORT_DIR = os.path.join(BASE_DIR, "data", "exports") # Fallback export dir
+if os.path.exists(LOCAL_CONFIG_FILE):
+    try:
+        with open(LOCAL_CONFIG_FILE, "r") as f:
+            _local_config = json.load(f)
+            if "EXPORT_DIR" in _local_config:
+                EXPORT_DIR = _local_config["EXPORT_DIR"]
+            if "DATA_DIR" in _local_config:
+                DATA_DIR = _local_config["DATA_DIR"]
+    except Exception as e:
+        print(f"Warning: Failed to load local_config.json: {e}")
+
+# Ensure export and data dirs exist
+os.makedirs(EXPORT_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # API Endpoints (TCBS)
 BASE_URL = "https://openapi.tcbs.com.vn"  # Standard base URL from credentials

@@ -20,6 +20,7 @@ from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataPr
 from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 from trading_on_tcbs_api.stock_system_v2.strategies import IntradayDipStrategy
 from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
+from trading_on_tcbs_api.stock_system_v2 import config
 
 # ==========================================
 # BACKTEST CONFIGURATION
@@ -126,8 +127,7 @@ def print_trade_details(df: pd.DataFrame, symbol: str, max_rows: int = 20):
         print(detail_df.to_markdown(index=False))
     
     # Export to CSV
-    import os
-    export_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
+    export_dir = config.EXPORT_DIR
     os.makedirs(export_dir, exist_ok=True)
     csv_path = os.path.join(export_dir, f"IntradayDip_{symbol}_trades.csv")
     detail_df.to_csv(csv_path, index=False)

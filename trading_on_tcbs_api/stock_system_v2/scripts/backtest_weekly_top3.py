@@ -12,6 +12,7 @@ if project_root not in sys.path:
 
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import stock_list
+from trading_on_tcbs_api.stock_system_v2 import config
 
 def run_backtest(return_weight=None):
     print("--- WEEKLY TOP 3 CROSS-SECTIONAL BACKTEST ---")
@@ -45,6 +46,7 @@ def run_backtest(return_weight=None):
         return
         
     df_all = pd.concat(dfs, ignore_index=True)
+    df_all = df_all.drop_duplicates(subset=['time', 'symbol'], keep='last')
     
     # Pivot to get wide format (Dates x Symbols)
     daily_close = df_all.pivot(index='time', columns='symbol', values='close').ffill()
@@ -235,7 +237,8 @@ def run_backtest(return_weight=None):
     total_return_pct = (final_value - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100
     
     # Daily returns of portfolio for CAGR and Sharpe
-    df_port['Return'] = df_port['Portfolio_Value'].pct_change().fillna(0)
+    df_port['Weekly_Return_Pct'] = (df_port['Portfolio_Value'].pct_change().fillna(0)) * 100
+    df_port['Cumulative_Return_Pct'] = ((df_port['Portfolio_Value'] / INITIAL_CAPITAL) - 1) * 100
     years = TEST_DAYS / 365.25
     cagr_pct = ((final_value / INITIAL_CAPITAL) ** (1 / max(1, years)) - 1) * 100
     
@@ -256,20 +259,21 @@ def run_backtest(return_weight=None):
     print("==========================================================")
     
     if not df_trades.empty:
-        export_path = os.path.join(os.path.dirname(__file__), "..", "exports")
+        export_path = config.EXPORT_DIR
         os.makedirs(export_path, exist_ok=True)
-        csv_file = os.path.join(export_path, "top3_weekly_trades.csv")
+        csv_file = os.path.join(export_path, f"top3_weekly_trades_{weight*100:.0f}pct.csv")
         df_trades.to_csv(csv_file, index=False)
         print(f"Trades logged attached to: {os.path.abspath(csv_file)}")
         
-    return df_trades
+    return df_trades, df_port
         
 if __name__ == "__main__":
-    return_weight_list = [0.5,0.6,0.7,0.8,0.9,1]
+    return_weight_list = [0.5,0.6,0.7,0.8,0.9]
     for weight in return_weight_list:
         print(f'return weight: {weight:,.1%}')
-        df_trades_result = run_backtest(return_weight=weight)
+        df_trades_result, df_port_result = run_backtest(return_weight=weight)
     if df_trades_result is not None and not df_trades_result.empty:
         # Assign to globals so PyCharm Data Viewer can access it
         globals()['df_trades'] = df_trades_result
-        print("- Bảng df_trades đã được đưa vào biến toàn cục. Mở SciView/Data Viewer để xem trực tiếp.")
+        globals()['df_portfolio'] = df_port_result
+        print("- Bảng df_trades và df_portfolio đã được đưa vào biến toàn cục. Mở SciView/Data Viewer để xem trực tiếp.")

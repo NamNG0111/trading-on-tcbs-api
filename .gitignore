@@ -142,6 +142,11 @@ logs/
 **/data/backups/
 **/data/tick_data.json
 
+# EXPORT DATA
+*.csv
+*.xlsx
+**/config/local_config.json
+
 # TEMPORARY FILES
 temp/
 tmp/
