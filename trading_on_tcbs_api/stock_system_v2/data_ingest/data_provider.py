@@ -5,7 +5,7 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
-from vnstock import Vnstock
+from vnstock.api.quote import Quote
 
 
 from trading_on_tcbs_api.stock_system_v2 import config
@@ -195,9 +195,9 @@ class DataProvider:
                 # We sleep to be safe.
                 time.sleep(3.1) 
                 
-                stock = Vnstock().stock(symbol=symbol, source=data_source)
+                stock = Quote(symbol=symbol, source=data_source)
                 # Note: vnstock history end_date is inclusive
-                df = stock.quote.history(start=start_date, end=end_date, interval=resolution)
+                df = stock.history(start=start_date, end=end_date, interval=resolution)
                 if df is not None and not df.empty:
                     # Normalize prices to VND (if < 1000, assume it's in thousands)
                     # HPG shouldn't be 20 VND.

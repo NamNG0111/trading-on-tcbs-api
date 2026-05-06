@@ -1,7 +1,7 @@
 
 import requests
 import datetime
-from vnstock import Vnstock
+from vnstock.api.quote import Quote
 
 # Monkey patch requests.get to print URL
 # (Same patching logic as before)
@@ -18,13 +18,10 @@ def patched_get(url, **kwargs):
 requests.get = patched_get
 
 def probe():
-    print("Calling Vnstock().stock(...).quote.history...")
+    print("Calling Quote(...).history...")
     try:
-        # Initialize Vnstock and select stock
-        stock = Vnstock().stock(symbol='HPG', source='TCBS')
-        
-        # Fetch history
-        df = stock.quote.history(start='2024-01-01', end='2024-01-05', interval='1D')
+        stock = Quote(symbol='HPG', source='TCBS')
+        df = stock.history(start='2024-01-01', end='2024-01-05', interval='1D')
         
         print("\nData retrieved successfully:")
         print(df.head())
