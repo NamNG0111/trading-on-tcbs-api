@@ -1,10 +1,11 @@
 
-import json
-import requests
 import datetime
-import time
-from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+
+import requests
+
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+
 
 def probe_endpoints():
     auth = StockAuth()
@@ -27,7 +28,7 @@ def probe_endpoints():
     # List of potential endpoints to try
     endpoints = [
         {
-            "url": f"/stock-insight/v1/stock/bars-long-term",
+            "url": "/stock-insight/v1/stock/bars-long-term",
             "method": "GET",
             "params": {
                 "ticker": symbol,

@@ -1,18 +1,18 @@
 import sys
-import pandas as pd
-import numpy as np
+
 import mplfinance as mpf
-from datetime import datetime
+import numpy as np
+import pandas as pd
 
 # Import existing backtester and strategies
 from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
 from trading_on_tcbs_api.stock_system_v2.strategies import (
+    CombinedStrategy,
+    CumulativeDropStrategy,
+    DipBuyStrategy,
+    RSIStrategy,
     SimpleMAStrategy,
     VolumeBoomStrategy,
-    RSIStrategy,
-    CombinedStrategy,
-    DipBuyStrategy,
-    CumulativeDropStrategy
 )
 
 # Reuse the exact strategy definitions from backtest_market
@@ -53,7 +53,7 @@ my_strategies = {
     f"DipBuy ({dip_buy.drop_pct}%)": strat_dip,
     f"Volume Breakout ({vol_buy.threshold_multiplier * 100 - 100:.0f}%)": strat_vol,
     f"RSI Basic (<{rsi_basic.oversold})": strat_rsi_basic,
-    f"RSI Reversal (Entry)": strat_rsi_reversal,
+    "RSI Reversal (Entry)": strat_rsi_reversal,
     f"{roc_buy.days}-Day Drop ({roc_buy.drop_pct}%)": strat_roc,
     f"SMA Crossover ({sma_cross.short_window}/{sma_cross.long_window}) + Vol": strat_sma_cross
 }

@@ -1,12 +1,12 @@
 
 import os
-import sys
-import pandas as pd
 from datetime import datetime, timedelta
 
+import pandas as pd
 
-from trading_on_tcbs_api.stock_system_v2.finance.performance_analyzer import PerformanceAnalyzer
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.finance.performance_analyzer import PerformanceAnalyzer
+
 
 def verify_analytics():
     print("--- VERIFYING ANALYTICS LOGIC ---")

@@ -1,10 +1,9 @@
 
-import sys
 import os
 
-
-from trading_on_tcbs_api.stock_system_v2.finance.performance_analyzer import PerformanceAnalyzer
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.finance.performance_analyzer import PerformanceAnalyzer
+
 
 def main():
     print("--- Performance Analytics Tool ---")

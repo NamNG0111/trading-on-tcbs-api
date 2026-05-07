@@ -1,53 +1,84 @@
+"""Dip-buy strategy: BUY when price drops X% below SMA."""
+
+from __future__ import annotations
+
 import pandas as pd
+from pydantic import Field
+
+from trading_on_tcbs_api.stock_system_v2.schemas.strategy_meta import (
+    StrategyDescription,
+    StrategyParams,
+)
+
 from .strategy import SignalStrategy
 
+
 class DipBuyStrategy(SignalStrategy):
-    """
-    Dip Buy Strategy.
-    Buy: Price drops more than X% below the Y-day SMA.
-    Sell: Reverts back to or above the Y-day SMA (Optional Exit Logic).
-    """
-    
-    def __init__(self, sma_window: int = 20, drop_pct: float = 10.0):
-        """
-        Args:
-            sma_window (int): The window for the Simple Moving Average (y).
-            drop_pct (float): The percentage drop required to trigger a buy (x).
-        """
-        self.sma_window = sma_window
-        self.drop_pct = drop_pct
-        self.drop_multiplier = 1.0 - (drop_pct / 100.0)
-        
-        self.name = "Dip Buy Strategy"
-        self.description = f"BUY when Price drops > {self.drop_pct}% below {self.sma_window}-day SMA."
-        
-    def get_required_indicators(self) -> list:
-        return [f'sma_{self.sma_window}', f'%_from_sma{self.sma_window}']
-        
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    """BUY on dips below the SMA, SELL on reversion to it."""
+
+    name = "Dip Buy Strategy"
+    description = "BUY when price drops > drop_pct below SMA; SELL on reversion."
+
+    class Params(StrategyParams):
+        sma_window: int = Field(20, ge=2, le=400)
+        drop_pct: float = Field(10.0, gt=0.0, le=99.0)
+
+    def __init__(
+        self,
+        sma_window: int | None = None,
+        drop_pct: float | None = None,
+        *,
+        params: "DipBuyStrategy.Params | dict | None" = None,
+    ) -> None:
+        kwargs: dict = {}
+        if sma_window is not None:
+            kwargs["sma_window"] = sma_window
+        if drop_pct is not None:
+            kwargs["drop_pct"] = drop_pct
+        super().__init__(params=params, **kwargs)
+        self.min_bars_required = self.params.sma_window
+        self.drop_multiplier = 1.0 - (self.params.drop_pct / 100.0)
+        self.description = (
+            f"BUY when price drops > {self.params.drop_pct}% below {self.params.sma_window}-day SMA."
+        )
+
+    @property
+    def sma_window(self) -> int:
+        return self.params.sma_window
+
+    @property
+    def drop_pct(self) -> float:
+        return self.params.drop_pct
+
+    @property
+    def context_columns(self) -> tuple[str, ...]:  # type: ignore[override]
+        return (f"%_from_sma{self.params.sma_window}",)
+
+    def get_required_indicators(self) -> list[str]:
+        return [f"sma_{self.params.sma_window}"]
+
+    def describe(self) -> StrategyDescription:
+        d = super().describe()
+        return d.model_copy(
+            update={
+                "expected_regime": "mean-revert",
+                "known_failure_modes": "Strong downtrends — repeated SELL trips on every reversion attempt.",
+            }
+        )
+
+    def _compute_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
-        
-        # 1. Look for pre-calculated indicator column
-        sma_col = f'sma_{self.sma_window}'
+        sma_col = f"sma_{self.params.sma_window}"
         if sma_col not in df.columns:
             raise ValueError(
-                f"Missing required indicator column from IndicatorEngine: {sma_col}. "
-                f"Ensure 'sma': [{self.sma_window}] is added to IndicatorEngine config."
+                f"Missing required indicator column from IndicatorEngine: {sma_col}."
             )
-            
-        # Initialize signal
-        df['signal'] = 0
-        # 2. Add Context Column
-        context_col = f'%_from_sma{self.sma_window}'
-        df[context_col] = ((df['close'] / df[sma_col]) - 1) * 100
+        df["signal"] = 0
+        context_col = f"%_from_sma{self.params.sma_window}"
+        df[context_col] = ((df["close"] / df[sma_col]) - 1) * 100
         df[context_col] = df[context_col].round(2)
-        
-        # 3. Buy Logic: Close is below (SMA * (1 - drop_pct))
+
         target_buy_price = df[sma_col] * self.drop_multiplier
-        df.loc[df['close'] < target_buy_price, 'signal'] = 1
-        
-        # 3. Sell Logic (Optional baseline: Sell when it touches SMA again)
-        # You could also use a different strategy to sell via CombinedStrategy.
-        df.loc[df['close'] >= df[sma_col], 'signal'] = -1
-        
+        df.loc[df["close"] < target_buy_price, "signal"] = 1
+        df.loc[df["close"] >= df[sma_col], "signal"] = -1
         return df

@@ -1,7 +1,9 @@
 
-from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
-from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
 import json
+
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
+
 
 def verify():
     print("--- Verifying Live Price Fetching ---")
@@ -32,6 +34,7 @@ def verify():
     # 4. Debug API Logic Specifics (Simulate inside get_realtime_price)
     # We want to see the RAW response to ensure field names are correct
     import requests
+
     from trading_on_tcbs_api.stock_system_v2 import config
     
     url = f"{config.BASE_URL}/tartarus/v1/tickerCommons"

@@ -1,11 +1,13 @@
-import json
 import datetime
+import json
 import os
-import requests
-import yaml
 from typing import Optional
 
+import requests
+import yaml
+
 from trading_on_tcbs_api.stock_system_v2 import config
+
 
 class StockAuth:
     """
@@ -28,7 +30,7 @@ class StockAuth:
                 with open(self.credentials_file, 'r') as f:
                     creds = yaml.safe_load(f)
                     self.api_key = creds.get('tcbs_api', {}).get('api_key')
-            except Exception as e:
+            except (OSError, yaml.YAMLError, KeyError, AttributeError) as e:
                 print(f"[Auth] Error loading credentials: {e}")
         else:
             print(f"[Auth] Credentials file not found at {self.credentials_file}")
@@ -61,7 +63,7 @@ class StockAuth:
                 print(f"[Auth] Token expired on {expire_date} (Today: {datetime.datetime.today().date()})")
                 return None
                 
-        except Exception as e:
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             print(f"[Auth] Error loading token: {e}")
             return None
 
@@ -88,7 +90,7 @@ class StockAuth:
             self.token = token
             print(f"[Auth] New token saved to {self.token_file}")
             return True
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             print(f"[Auth] Error saving token: {e}")
             return False
 
@@ -110,7 +112,7 @@ class StockAuth:
         }
         
         try:
-            print(f"[Auth] Requesting new token...")
+            print("[Auth] Requesting new token...")
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             
             if response.status_code == 200:
@@ -125,7 +127,7 @@ class StockAuth:
                 print(f"[Auth] Token renewal failed: {response.status_code} - {response.text}")
                 return False
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError) as e:
             print(f"[Auth] Exception during token renewal: {e}")
             return False
 
@@ -156,8 +158,9 @@ class StockAuth:
                 # Assume valid to avoid spamming OTP on backend errors.
                 return True 
                 
-        except Exception as e:
-            # Network error? Assume valid to be safe, don't block offline mode if logic allows
+        except (requests.exceptions.RequestException, ValueError) as e:
+            # Network error: don't block offline mode — caller will see the
+            # rejection on the first real request if the token really is bad.
             print(f"[Auth] Warning: Could not verify token with API: {e}")
             return True
 

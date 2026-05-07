@@ -1,135 +1,156 @@
+"""AutoTrader — composes a full scan-execute loop with explicit dependencies.
 
-import sys
-import os
-import asyncio
-import pandas as pd
+Phase-3 DI contract: every collaborator (auth, scanner, order manager,
+order tracker, account manager, settings) is injected. The CLI entry
+point (`main.py`) does the wiring; this class never instantiates anything
+internally beyond pure value objects.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
 
-
-from trading_on_tcbs_api.stock_system_v2 import config
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
 from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanner
 from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
-from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
 from trading_on_tcbs_api.stock_system_v2.execution.order_tracker import OrderTracker
-from trading_on_tcbs_api.stock_system_v2.strategies import (
-    SimpleMAStrategy,
-    VolumeBoomStrategy,
-    RSIStrategy,
-    CombinedStrategy
+from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
+from trading_on_tcbs_api.stock_system_v2.obs import (
+    get_logger,
+    log_event,
+    record_metric,
+    with_correlation,
 )
+from trading_on_tcbs_api.stock_system_v2.settings import Settings
+
+_logger = get_logger("auto_trader")
+
 
 class AutoTrader:
-    def __init__(self, safe_mode=True):
-        print(f"--- AUTO TRADER INITIALIZED (Safe Mode: {safe_mode}) ---")
-        self.auth = StockAuth()
-        self.auth.validate()
-        
-        # 1. Setup Strategy (Split Logic)
-        self.ma = SimpleMAStrategy(short_window=20, long_window=50)
-        self.vol = VolumeBoomStrategy(window=20, threshold_pct=10)
-        self.rsi = RSIStrategy(period=14)
-        
-        self.strategy = CombinedStrategy(
-            strategies=[],
-            buy_strategies=[self.ma, self.vol],
-            sell_strategies=[self.rsi],
-            buy_mode="AND",
-            sell_mode="OR"
+    """Orchestrates one scan-and-trade cycle.
+
+    Args:
+        settings: Frozen `Settings` value object. Defines the universe and
+            risk caps; per-call overrides are made by the caller via
+            `Settings.model_copy(update=…)` before constructing the trader.
+        auth: Authenticated `StockAuth` (validate before passing in).
+        scanner: Pre-configured `MarketScanner` with strategies attached.
+        order_manager: Live or safe-mode order placer.
+        order_tracker: Persists the audit trail of placed orders.
+        account: Cash + position bookkeeper (mock or real-synced).
+
+    Example:
+        >>> settings = Settings.load()
+        >>> auth = StockAuth(); auth.validate()
+        >>> trader = AutoTrader(
+        ...     settings=settings, auth=auth,
+        ...     scanner=MarketScanner(...),
+        ...     order_manager=OrderManager(auth=auth, safe_mode=True),
+        ...     order_tracker=OrderTracker(),
+        ...     account=AccountManager(initial_cash=100_000_000),
+        ... )
+        >>> import asyncio; asyncio.run(trader.run())
+    """
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        auth: StockAuth,
+        scanner: MarketScanner,
+        order_manager: OrderManager,
+        order_tracker: OrderTracker,
+        account: AccountManager,
+    ) -> None:
+        self.settings = settings
+        self.auth = auth
+        self.scanner = scanner
+        self.order_manager = order_manager
+        self.tracker = order_tracker
+        self.account = account
+        self.symbols = list(settings.symbols)
+        recovered = self.tracker.recover_open_orders()
+        log_event(
+            _logger, "auto_trader.init",
+            safe_mode=self.order_manager.safe_mode,
+            execution_disabled=self.order_manager.execution_disabled,
+            n_symbols=len(self.symbols),
+            recovered_open_orders=len(recovered),
         )
-        
-        # 2. Setup Components
-        self.scanner = MarketScanner(strategy=self.strategy, auth=self.auth)
-        self.order_manager = OrderManager(auth=self.auth, safe_mode=safe_mode)
-        
-        # 3. Financial Core (Wallet & Ledger)
-        self.account = AccountManager(initial_cash=100_000_000) # 100M VND Mock
-        self.tracker = OrderTracker()
-        
-        # Target List
-        self.symbols = config.SYMBOLS # Default list from config
-        
-    async def run(self):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting Scan on {len(self.symbols)} symbols...")
-        
-        # 0. Sync Wallet (Try Real Data)
+
+    async def run(self) -> None:
+        """Execute one scan → trade cycle on the configured universe.
+
+        Wraps the whole cycle in a single correlation id so every log
+        line — scanner, order manager, tracker — can be grouped by it.
+        """
+        with with_correlation(prefix="cycle"):
+            await self._run_inner()
+
+    async def _run_inner(self) -> None:
+        log_event(_logger, "cycle.start", n_symbols=len(self.symbols))
+        record_metric("autotrader.cycles", 1.0)
+
         target_account = None
         if not self.order_manager.safe_mode:
-            print("\n" + "="*50)
+            print("\n" + "=" * 50)
             print("WARNING: LIVE TRADING MODE IS ACTIVE")
-            print("="*50)
+            print("=" * 50)
             print("Please select the sub-account to trade on:")
             print("  1. Normal Account (0001262203)")
             print("  2. Margin Account (0001262204)")
             print("  (Or type specific sub-account ID e.g. 0001262203)")
             choice = input("Select Account [1/2/ID] (Press Enter for Default): ").strip()
-            
             if choice == "1":
                 target_account = "0001262203"
             elif choice == "2":
                 target_account = "0001262204"
             elif choice:
                 target_account = choice
-            
-            if target_account:
-                print(f"[Set Target Account] {target_account}")
-            else:
-                print("[Set Target Account] Default aggregated view")
-                
+            print(f"[Set Target Account] {target_account or 'Default aggregated view'}")
+
         await self.account.sync_from_api(target_account=target_account)
-        
-        print(f"[Wallet] Balance: {self.account.get_balance():,.0f} VND | Positions: {self.account.get_positions()}")
-        
-        # 1. Scan
-        results_df = self.scanner.scan_to_df(self.symbols)
-        
-        if results_df.empty:
-            print("No signals found.")
+        log_event(
+            _logger, "cycle.wallet_synced",
+            balance=self.account.get_balance(),
+            positions=dict(self.account.get_positions()),
+        )
+
+        results = self.scanner.scan(self.symbols)
+        if not results:
+            log_event(_logger, "cycle.no_signals")
             return
-            
-        print(f"Found {len(results_df)} signals!")
-        print(results_df)
-        
-        # 2. Execute
-        for _, row in results_df.iterrows():
-            symbol = row['symbol']
-            signal = row['signal'] # BUY or SELL
-            price = row['price']
-            
-            # Simple Position Sizing for Demo
-            volume = 100 
-            
-            # Financial Check
-            if signal == 'BUY':
+
+        log_event(_logger, "cycle.signals_found", n_signals=len(results))
+
+        for sig in results:
+            symbol = sig.symbol
+            action = sig.signal
+            price = sig.price
+            volume = 100  # Phase-5 will replace this with the position sizer.
+
+            if action == "BUY":
                 cost = price * volume
                 if not self.account.check_buying_power(cost):
-                     print(f"[Skip] Not enough cash to BUY {volume} {symbol} (Cost: {cost:,.0f}).")
-                     continue
-            elif signal == 'SELL':
-                # Check if we have position
+                    log_event(
+                        _logger, "cycle.skip_buy.insufficient_cash",
+                        symbol=symbol, volume=volume, cost=cost,
+                    )
+                    record_metric("cycle.skipped", 1.0, reason="cash", symbol=symbol)
+                    continue
+            elif action == "SELL":
                 current_qty = self.account.get_positions().get(symbol, 0)
                 if current_qty < volume:
-                    # Adjust volume or skip?
-                    # For now just skip or warn
-                    print(f"[Warn] Selling {volume} {symbol} but only have {current_qty}. (Short selling not detecting yet)")
-            
-            # Place Order
+                    log_event(
+                        _logger, "cycle.warn.undersized_sell",
+                        level=30, symbol=symbol, requested=volume, held=current_qty,
+                    )
+
             result = self.order_manager.place_order(
-                symbol=symbol,
-                side=signal,
-                price=price,
-                volume=volume
+                symbol=symbol, side=action, price=price, volume=volume
             )
-            
-            # Post-Trade Logic (Update Wallet & Ledger)
-            if result.get('status') == 'success':
-                # 1. Log to CSV
-                self.tracker.log_order(result, symbol, signal, price, volume)
-                
-                # 2. Update Mock Wallet
-                self.account.update_after_trade(signal, symbol, price, volume)
-            
-if __name__ == "__main__":
-    # Default to Safe Mode
-    bot = AutoTrader(safe_mode=True)
-    asyncio.run(bot.run())
+
+            if result.status in ("FILLED", "ACCEPTED", "PARTIALLY_FILLED"):
+                # Tracker is already written by OrderManager (PENDING +
+                # final state). Just keep the mock book in sync.
+                self.account.update_after_trade(action, symbol, price, volume)

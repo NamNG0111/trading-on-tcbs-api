@@ -1,15 +1,14 @@
 
-import asyncio
 import json
-import requests
-import sys
 import os
-
-
-from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
-from trading_on_tcbs_api.stock_system_v2 import config
-from trading_on_tcbs_api.utils.config_manager import get_config_manager
 from pathlib import Path
+
+import requests
+
+from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.utils.config_manager import get_config_manager
+
 
 def probe_profile():
     print("--- PROBING PROFILE ENDPOINT (/eros/v2) ---")

@@ -1,7 +1,7 @@
-import sys
 import os
+import sys
+
 import pandas as pd
-from datetime import datetime
 
 # Add project root to sys.path to resolve absolute imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -22,21 +22,23 @@ FORWARD_DAYS = [3, 5, 10, 20]    # N-Day holding periods to analyze after every 
 # ==========================================
 
 import numpy as np
-from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
+
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
+from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
 from trading_on_tcbs_api.stock_system_v2.strategies import (
+    CombinedStrategy,
+    CumulativeDropStrategy,
+    DipBuyStrategy,
+    RSIDivergenceStrategy,
+    RSIStrategy,
     SimpleMAStrategy,
     VolumeBoomStrategy,
-    RSIStrategy,
-    RSIDivergenceStrategy,
-    CombinedStrategy,
-    DipBuyStrategy,
-    CumulativeDropStrategy
 )
-from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import stock_list, VN30
+
 
 def main():
-    print(f"--- MARKET WIDE BACKTESTER ---")
+    print("--- MARKET WIDE BACKTESTER ---")
     
     # 1. Define Strategies (Same as scan_market.py)
     sma_exit_buy_dip = SimpleMAStrategy(short_window=1, long_window=20, invert=True)
@@ -81,7 +83,7 @@ def main():
         f"DipBuy ({dip_buy.drop_pct}%)": strat_dip,
         f"Volume Breakout ({vol_buy.threshold_multiplier * 100 - 100:.0f}%)": strat_vol,
         f"RSI Basic (<{rsi_basic.oversold})": strat_rsi_basic,
-        f"RSI Reversal (Entry)": strat_rsi_reversal,
+        "RSI Reversal (Entry)": strat_rsi_reversal,
         f"{roc_buy.days}-Day Drop ({roc_buy.drop_pct}%)": strat_roc,
         f"SMA Crossover ({sma_cross.short_window}/{sma_cross.long_window}) + Vol": strat_sma_cross,
         f"RSI Divergence (lookback={rsi_div.lookback})": strat_rsi_div
@@ -118,10 +120,10 @@ def main():
             if report and 'total_return_pct' in report:
                 all_results[strat_name].append(report)
                 
-    print(f"\\n\\n[Backtest Completed]")
-    print(f"================================================================================")
+    print("\\n\\n[Backtest Completed]")
+    print("================================================================================")
     print(f"MARKET-WIDE PERFORMANCE SUMMARY ({TEST_DAYS} Days | {INITIAL_CAPITAL:,.0f} VND Start)")
-    print(f"================================================================================")
+    print("================================================================================")
     
     summary_data = []
     
@@ -166,9 +168,9 @@ def main():
     
     if SHOW_PORTFOLIO_SUMMARY:
         print(df_summary.to_markdown(index=False))
-        print(f"================================================================================\n")
+        print("================================================================================\n")
     else:
-        print(f"[Table 1: Portfolio Summary Hidden]\n")
+        print("[Table 1: Portfolio Summary Hidden]\n")
     
     df_fwd = pd.DataFrame()
     df_fixed = pd.DataFrame()
@@ -217,11 +219,11 @@ def main():
             df_fwd = pd.DataFrame(fwd_data)
             df_fwd = df_fwd.sort_values(by=["Strategy", "Hold (Days)"])
             
-            print(f"================================================================================")
-            print(f"FORWARD RETURNS ANALYSIS (Static N-Day Hold after every BUY signal)")
-            print(f"================================================================================")
+            print("================================================================================")
+            print("FORWARD RETURNS ANALYSIS (Static N-Day Hold after every BUY signal)")
+            print("================================================================================")
             print(df_fwd.to_markdown(index=False))
-            print(f"================================================================================\n")
+            print("================================================================================\n")
         
     # --------------------------------------------------------------------------------
     # ADVANCED METRIC: FIXED N-DAY HOLD PORTFOLIO SIMULATION
@@ -276,11 +278,11 @@ def main():
         if fixed_data:
             df_fixed = pd.DataFrame(fixed_data)
             df_fixed = df_fixed.sort_values(by=["Strategy", "Hold (Days)"])
-            print(f"================================================================================")
-            print(f"FIXED N-DAY HOLD PORTFOLIO SIMULATION (Chronological Execution | 1 Trade at a time)")
-            print(f"================================================================================")
+            print("================================================================================")
+            print("FIXED N-DAY HOLD PORTFOLIO SIMULATION (Chronological Execution | 1 Trade at a time)")
+            print("================================================================================")
             print(df_fixed.to_markdown(index=False))
-            print(f"================================================================================\n")
+            print("================================================================================\n")
             
     # --------------------------------------------------------------------------------
     # EXPORT RAW SIGNALS LOG TO CSV
@@ -313,7 +315,7 @@ def main():
             
     if dict_details:
         print(f"[*] Detailed strategy signals exported to: {export_dir}")
-        print(f"================================================================================\n")
+        print("================================================================================\n")
     
     return df_summary, df_fwd, df_fixed, dict_details
 

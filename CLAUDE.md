@@ -1,249 +1,421 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working in this repo.
 
-## Project Overview
+## Project overview
 
-Algorithmic trading system integrated with the Vietnamese TCBS brokerage API. Supports historical backtesting, live market scanning, and paper/live order execution for equities and futures.
+Algorithmic trading system integrated with the Vietnamese TCBS brokerage
+API. Originally a script-shaped backtester + scanner; the V2 package
+(`trading_on_tcbs_api/stock_system_v2/`) has been transformed across nine
+phases into an **agent-callable toolbelt**: typed schemas, Pydantic
+contracts, structured logs, idempotent execution, an MCP server, and
+agent recipes that drive everything end-to-end.
 
-## Common Commands
+If you've stepped away for a while: the codebase you remember was Python
+scripts. What's there now is a tool layer with 15 typed tools, four
+agent recipes (research / scanner / risk / paper trader), and a
+production-grade safety stack around order placement.
+
+**The integration plan + checklist live in `docs/AI_INTEGRATION_PLAN.md`
+and `docs/AI_INTEGRATION_TODO.md` — read those for the per-phase
+rationale.**
+
+## Common commands
 
 ```bash
-# Run market scanner (main entry point for V2 system)
+# Tests (193+ green; full suite, network-free, ~3s)
+make test                          # or: python -m pytest tests/
+
+# Lint + typecheck + tests bundle
+make ci
+
+# Strategy smoke gates (Phase-4 CI gate; runs on PRs touching strategies/)
+make strategy-smoke NAME=rsi
+make strategy-smoke-all
+
+# Regenerate test fixtures + expected-signal CSVs
+make fixtures
+
+# Daily live market scan (requires creds)
 python trading_on_tcbs_api/stock_system_v2/scripts/scan_market.py
 
-# Run backtest across all symbols
+# Backtest entry points
 python trading_on_tcbs_api/stock_system_v2/scripts/backtest_market.py
+python trading_on_tcbs_api/stock_system_v2/scripts/backtest_top3_phase2_rebaseline.py
 
-# Run the auto-trader (live trading loop)
-python trading_on_tcbs_api/stock_system_v2/main.py
+# AutoTrader (paper-trading loop; safe-mode default)
+EXECUTION_DISABLED=true python trading_on_tcbs_api/stock_system_v2/main.py
 
-# Run legacy stock strategy
-python trading_on_tcbs_api/runners/run_stock_strategy.py
+# MCP server — exposes every tool over stdio (requires `pip install mcp`)
+python -m trading_on_tcbs_api.stock_system_v2.tools.mcp_server
 
-# Run tests
-python -m pytest test_tcbs.py test_vci.py test_requests.py test_other_sources.py
-
-# Setup credentials (first-time setup)
+# Setup creds (first-time)
 python trading_on_tcbs_api/runners/setup_credentials.py
-
-# Validate configuration
-python trading_on_tcbs_api/runners/test_configuration.py
 ```
 
-## Architecture
+## Architecture (V2)
 
-### V2 System (Primary) — `trading_on_tcbs_api/stock_system_v2/`
+V2 is the production system. Legacy code (`stock_strategy/`,
+`futures_strategy/`, `simple_wow/`, `indicators/`, top-level `core/` and
+`ws_clients/`) is in maintenance mode — patch in place but don't extend.
 
-The modern production system. All new strategies and features should go here.
-
-**Data flow:**
-1. `data_ingest/data_provider.py` — fetches historical OHLCV from vnstock (KBS source), caches to CSV, merges with live TCBS prices into a unified DataFrame
-2. `core/indicator_engine.py` — computes all technical indicators (SMA, EMA, RSI, MACD, ROC, Volume MA) in a single pandas-ta pass over the DataFrame
-3. `core/market_scanner.py` — iterates symbols, applies indicator engine, runs all strategies, returns today's signals as dict/DataFrame
-4. `execution/order_manager.py` — places orders; **safe mode is enabled by default** (dry run), must be explicitly disabled for live trading
-5. `execution/trade_manager.py` — paper trading simulator tracking positions, cash, and PnL
-
-**Key classes:**
-- `StockAuth` (`auth/auth.py`) — loads/saves JWT from `config/token.json`, renews via OTP + API key
-- `AccountManager` (`finance/account_manager.py`) — starts with 100M VND mock balance; can sync real assets from TCBS API
-- `AutoTrader` (`core/auto_trader.py`) — orchestrates full pipeline: auth → strategies → scanner → orders
-
-### Strategy Framework
-
-All strategies live in `stock_system_v2/strategies/` and must inherit from `SignalStrategy` (`strategies/strategy.py`):
-
-```python
-class MyStrategy(SignalStrategy):
-    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Must add a 'signal' column: 1 (BUY), -1 (SELL), 0 (HOLD)
-        return df
-```
-
-`CombinedStrategy` (`combined_strategy.py`) aggregates multiple strategies with AND/OR logic for entry/exit. Existing strategies: `SimpleMAStrategy`, `RSIStrategy`, `VolumeBoomStrategy`, `IntradayDipStrategy`, `DipBuyStrategy`, `CumulativeDropStrategy`, `RSIDivergenceStrategy`.
-
-### Configuration
-
-- `trading_on_tcbs_api/config/credentials.yaml` — TCBS API key, account IDs, token path (copy from `credentials.yaml.example`)
-- `stock_system_v2/config.py` — default symbol universe (TCB, HPG, SSI, VHM, VIC, VRE, VNM, FPT), risk params (10% position size, 5% stop loss, 10% take profit)
-- `config/stock_config.yaml` / `futures_config.yaml` — legacy runner configurations
-
-#### Local Data Paths (Machine-Specific Override)
-
-`trading_on_tcbs_api/config/local_config.json` overrides `DATA_DIR` and `EXPORT_DIR` at runtime. This file is **not committed** and must be created manually on each machine. On the primary dev machine, both paths point to Google Drive so cached stock CSVs and backtest exports are accessible from anywhere:
-
-```json
-{
-    "DATA_DIR": "/Users/namng/Library/CloudStorage/GoogleDrive-nam.n.g.93@gmail.com/My Drive/PythonProject/data/stocks",
-    "EXPORT_DIR": "/Users/namng/Library/CloudStorage/GoogleDrive-nam.n.g.93@gmail.com/My Drive/PythonProject/data/exports"
-}
-```
-
-- `DATA_DIR` — cached historical OHLCV CSVs, one file per symbol (`{SYMBOL}_1D.csv`). This is where `DataProvider` reads/writes its cache, so if this directory looks empty locally, check Google Drive.
-- `EXPORT_DIR` — backtest result CSVs written by scan/backtest scripts.
-- Without `local_config.json`, both paths fall back to `trading_on_tcbs_api/data/stocks` and `trading_on_tcbs_api/data/exports` inside the repo.
-
-### Legacy Systems
-
-- `stock_strategy/` — older equity trading system with its own data manager
-- `futures_strategy/` — futures with WebSocket streaming data
-- `simple_wow/` — async order placement system with its own strategy layer
-- `indicators/` — TA-Lib based indicator library with `SignalType` enum (BUY/SELL/HOLD/STRONG_BUY/STRONG_SELL)
-
-New work should target the V2 system; the legacy modules are in maintenance mode.
-
-### Async Patterns
-
-Core infrastructure (`core/api_client.py`, `ws_clients/`, `simple_wow/`) uses `asyncio`. The V2 system is synchronous with async helpers for non-blocking API calls. Use `aiohttp` for async HTTP; `requests` for sync calls.
-
-## Codebase Map
-
-Full file tree with one-line descriptions. Use this to locate code; cross-reference the Architecture section above for how the modules fit together.
+### Layered design
 
 ```
-trading_on_tcbs_api/
-├── __init__.py
-├── test_signals.py                          # ad-hoc signal sanity checks
+   Agents (Phase 8/9): research, scanner, risk, paper_trader, continuous-learning
+        │  drives via tools.invoke(name, args) only — zero internal imports
+        ▼
+   Tools (Phase 7):   15 registered tools + ToolResponse / ToolError envelope
+        │  thin wrappers over the production primitives below
+        ▼
+   Production V2:     scanner / backtester / order_manager / account / data_provider
+        │  Pydantic schemas, typed exceptions, structured logs, correlation IDs
+        ▼
+   TCBS / vnstock     external broker (TCBS REST) + market data (vnstock-KBS)
+```
+
+Read it bottom-up if you want to understand the safety story; top-down
+if you want to understand how an agent uses it.
+
+### Data flow (a daily scan, end to end)
+
+1. `data_ingest/data_provider.py` — fetches historical OHLCV from
+   vnstock (KBS source), validates against the `OHLCVFrame` schema,
+   caches to CSV. Today's still-forming bar is marked `is_partial=True`
+   with `volume=NaN` so volume strategies don't silently misfire.
+   Cross-source reconciler compares vnstock close vs TCBS `refPrice`.
+2. `core/indicator_engine.py` — single pass through pandas-ta producing
+   SMA / EMA / RSI / MACD / ROC / VOL_SMA columns. Audited for
+   look-ahead; closed-bars-only (the partial bar is dropped before
+   computation).
+3. `core/market_scanner.py` — iterates symbols × strategies, returns
+   today's signals as typed `ScanResult` objects. Uses each strategy's
+   `extract_signal_context(row)` accessor to attach typed context.
+4. `execution/pre_trade_validator.py` — five rules (universe, lot size,
+   price band, notional, cash/cover) emit a `RiskCheckResult` token
+   bound to the order via SHA-256 hash, 60-second TTL.
+5. `execution/order_manager.py` — only places orders when the kill-switch
+   is off, the token is fresh + hash-matching (live mode), and the
+   tracker hasn't seen the `client_order_id` before. Real TCBS path is
+   wired but reachable only with explicit live-mode construction.
+6. `execution/order_tracker.py` — append-only ledger; `register_pending`
+   writes a row before the wire call so a crash between submit and log
+   leaves a recoverable breadcrumb. `recover_open_orders()` reads it
+   back on startup.
+7. `obs/` — every step emits structured JSON with the active
+   correlation id; metrics go to `v2.metrics` logger; order decisions
+   append to `EXPORT_DIR/decisions.jsonl`.
+
+### Strategy framework (Phase 4)
+
+Every strategy lives in `stock_system_v2/strategies/<name>_strategy.py`.
+The base class `SignalStrategy` is concrete now — subclasses override
+`_compute_signals(df)`, not `generate_signals`, and the base masks any
+non-zero signal in `[0, min_bars_required)`.
+
+Each strategy declares:
+
+- A nested `Params(StrategyParams)` Pydantic model (frozen,
+  `extra='forbid'`). Bad params raise at construction.
+- `min_bars_required` — set in `__init__` after `super().__init__`.
+- `describe() -> StrategyDescription` — agent-readable rationale,
+  expected regime, known failure modes, indicators, params schema.
+- Optional `context_columns` for `extract_signal_context()`.
+
+`STRATEGIES` registry in `strategies/registry.py` is the single source
+of truth: `get_strategy(name)` raises `KeyError` listing available ids.
+`CombinedStrategy` precedence is codified — sell wins on conflict, AND =
+unanimous, OR = any.
+
+Adding a strategy = `strategies/CONTRIBUTING.md` checklist + a passing
+`make strategy-smoke NAME=<id>`. CI runs the smoke gates on any PR
+touching `strategies/`.
+
+### Schemas package (Phase 3)
+
+`schemas/` is the cross-module contract. Every public return type is a
+Pydantic model:
+
+| Module | Models |
+|--------|--------|
+| `ohlcv.py` | `OHLCVFrame`, `validate_ohlcv`, `closed_bars`, `OHLCVSchemaError` |
+| `signals.py` | `Signal`, `SignalAction`, `ScanResult` |
+| `orders.py` | `OrderRequest`, `OrderResponse`, `OrderSide`, `OrderType`, `OrderStatus`, `Position`, `AccountSnapshot` |
+| `risk.py` | `RiskCheckResult`, `RiskCheckFinding`, `CheckSeverity`, `MarketContext` |
+| `backtest.py` | `BacktestResult`, `WalkForwardResult`, `WalkForwardWindow`, `to_backtest_results` |
+| `health.py` | `HealthStatus`, `HealthCheck` |
+| `strategy_meta.py` | `StrategyParams`, `StrategyDescription` |
+
+`exceptions.py` is the typed error hierarchy: `StockSystemError` →
+`DataFetchError` (+ `StaleCacheError`, `InsufficientHistoryError`),
+`InvalidParameterError`, `AuthExpiredError`, `OrderRejectedError` (+
+`DuplicateOrderError`), `RiskLimitViolatedError`, `PositionDriftError`.
+
+### Settings (Phase 3)
+
+Replaces the old global `from … import config` pattern. `Settings.load()`
+is a frozen Pydantic value object that reads `config/local_config.json`
++ `EXECUTION_DISABLED` env. Per-call overrides via
+`settings.model_copy(update={...})`. The legacy `config.py` is now a
+back-compat shim sourced from `Settings.load()` so existing imports
+keep resolving.
+
+### Observability (Phase 6)
+
+`stock_system_v2/obs/` is the observability primitive box:
+
+- `obs/logger.py` — `JSONFormatter`; `get_logger("module")` returns a
+  configured `v2.<module>` logger; `log_event(logger, "stable.event",
+  **fields)` is the call shape.
+- `obs/correlation.py` — `with_correlation(prefix="cycle")` context
+  manager; the formatter auto-attaches the active id.
+- `obs/metrics.py` — `record_metric(name, value, **labels)` and
+  `timed(name)`; metrics are JSON log events on `v2.metrics`.
+- `obs/decisions.py` — `write_decision(payload)` appends to
+  `EXPORT_DIR/decisions.jsonl`.
+
+The reserved-key kwargs (`message`, `args`, …) are auto-renamed with
+`field_` prefix so callers don't have to remember the stdlib
+`LogRecord` namespace.
+
+### Tool layer (Phase 7)
+
+`tools/` is the agent-callable surface. ADR-003 picked MCP as canonical
+transport; handlers stay pure Python so tests + smoke runs don't need
+the SDK.
+
+- `tools/registry.py` — `@tool(name, input_model, output_model,
+  side_effecting=…)` decorator + `invoke(name, args)` dispatcher.
+  Typed `StockSystemError` → stable `ToolError` codes.
+- `tools/response.py` — `ToolResponse[T]` envelope (`correlation_id`,
+  `data_freshness_seconds`); `ToolError(code, message, retriable, details)`.
+- `tools/context.py` — `ToolContext` value object; `set_context(ctx)`
+  installs a process-wide instance (composition root).
+- `tools/mcp_server.py` — lazy MCP imports; `python -m
+  …tools.mcp_server` exposes every tool over stdio.
+
+15 tools registered:
+
+| Tool | Side-effecting? |
+|------|---|
+| `list_symbols`, `list_strategies`, `get_history`, `get_quote`, `compute_indicators` | no |
+| `scan_market`, `run_backtest`, `walk_forward` | no |
+| `get_account`, `get_positions`, `get_audit_log`, `health_check` | no |
+| `validate_order` | no (caches token) |
+| `submit_order`, `cancel_order` | yes |
+
+### Agent layer (Phases 8 + 9)
+
+`agents/` has both a Python recipe and an LLM system prompt for each
+agent. Recipes drive `tools.invoke(...)` only — no internal V2 imports
+inside the workflow body.
+
+| Agent | Recipe | Prompt |
+|---|---|---|
+| Research | `research_strategy_for_symbol(symbol, …) → ResearchNote` | `agents/prompts/research.md` |
+| Scanner | `daily_scan(...) → ScannerReport` | `agents/prompts/scanner.md` |
+| Risk | `evaluate_proposed_order(req) → RiskOpinion` | `agents/prompts/risk.md` |
+| Paper Trader | `paper_trade_cycle(...) → PaperTradeReport` | `agents/prompts/paper_trader.md` |
+| Live Trader | `live_trade_cycle(...)` — refusal stub | (gated until graduation) |
+
+Phase-9 continuous-learning primitives in `agents/continuous.py`:
+`decisions_dataset(...)` aggregates the audit log; `strategy_proposal_brief()`
+flags coverage gaps for a strategy-proposal PR; `drift_check(...)`
+compares live PnL against walk-forward expectation; `flag_tool_output(...)`
+appends to `EXPORT_DIR/tool_quality.jsonl` for the operator's weekly
+review.
+
+## Configuration
+
+- `trading_on_tcbs_api/config/credentials.yaml` — TCBS API key + account
+  ids. Copy from `credentials.yaml.example`.
+- `trading_on_tcbs_api/config/local_config.json` — machine-specific
+  override of `DATA_DIR` + `EXPORT_DIR`. Not committed; create per
+  machine. On the dev box both paths point at Google Drive so cached
+  CSVs are accessible from anywhere.
+- `Settings.load()` reads both at process start. `EXECUTION_DISABLED=true`
+  in the environment hard-blocks every order regardless of safe-mode.
+
+Risk caps default to `max_capital_per_trade_pct=0.10`,
+`stop_loss_pct=0.05`, `take_profit_pct=0.10`, `max_open_positions=5`.
+
+## Codebase map
+
+```
+trading_on_tcbs_api/stock_system_v2/        # ★ production system
+├── main.py                                 # composition root → AutoTrader
+├── config.py                               # back-compat shim over Settings
+├── settings.py                             # Pydantic Settings.load()
+├── exceptions.py                           # typed StockSystemError hierarchy
 │
-├── config/                                  # runtime config & secrets (most files gitignored)
-│   ├── credentials.yaml                     # TCBS API key + account IDs
-│   ├── token.json                           # cached JWT (renewed by StockAuth)
-│   ├── profile.json                         # cached user profile from TCBS
-│   ├── local_config.json                    # machine-specific DATA_DIR / EXPORT_DIR override
-│   ├── stock_config.yaml                    # legacy stock runner config
-│   └── futures_config.yaml                  # legacy futures runner config
+├── schemas/                                # Pydantic cross-module contracts
+│   ├── ohlcv.py, signals.py, orders.py, risk.py
+│   ├── backtest.py, health.py, strategy_meta.py
+│   └── __init__.py                         # re-exports everything
 │
-├── core/                                    # legacy shared infra (used by simple_wow + futures)
-│   ├── api_client.py                        # async aiohttp wrapper for TCBS REST
-│   └── order_monitor.py                     # polls order status post-submission
+├── obs/                                    # structured logging + metrics + audit
+│   ├── logger.py                           # JSONFormatter, log_event
+│   ├── correlation.py                      # with_correlation contextvar
+│   ├── metrics.py                          # record_metric, timed
+│   └── decisions.py                        # write_decision → decisions.jsonl
 │
-├── ws_clients/                              # legacy WebSocket clients
-│   └── base_websocket.py                    # base class for streaming connections
+├── auth/auth.py                            # JWT load/save + OTP renewal
 │
-├── utils/                                   # cross-cutting helpers (shared by V1 + V2)
-│   ├── common.py                            # generic helpers (timestamps, formatting)
-│   ├── config_manager.py                    # YAML loader for legacy configs
-│   ├── token_manager.py                     # JWT persistence helpers
-│   └── position_manager.py                  # position math used by older runners
+├── data_ingest/
+│   ├── data_provider.py                    # vnstock fetch + cache + live merge
+│   ├── reconciler.py                       # vnstock vs TCBS refPrice check
+│   └── symbol_metadata.py                  # per-symbol price-scale table
 │
-├── logger_utils/
-│   └── fast_logger.py                       # structured logger w/ rotating files in logs/
+├── core/
+│   ├── indicator_engine.py                 # pandas-ta single-pass; lookahead-audited
+│   ├── market_scanner.py                   # DI: data_provider+engine+strategies
+│   ├── backtester.py                       # native + fixed-hold; costs-aware
+│   ├── walk_forward.py                     # rolling train/test windows; OOS-only
+│   ├── auto_trader.py                      # canonical execution path (ADR-002)
+│   ├── costs.py                            # TransactionCosts (TCBS defaults)
+│   ├── position_sizer.py                   # FixedFraction / EqualWeight / VolTargeted
+│   ├── health.py                           # health_check() orchestrator
+│   ├── stock_api_client.py                 # TCBS REST client
+│   └── backtest_result.py                  # back-compat shim → schemas.backtest
 │
-├── indicators/                              # LEGACY: TA-Lib indicator suite (V2 uses pandas-ta)
-│   ├── base.py                              # SignalType enum, base indicator class
-│   ├── talib_indicators.py                  # TA-Lib wrappers (RSI, MACD, BB, etc.)
-│   ├── custom_indicators.py                 # custom/composite indicators
-│   └── signal_generator.py                  # turns indicator outputs into BUY/SELL signals
+├── strategies/                             # Phase-4 framework
+│   ├── strategy.py                         # SignalStrategy base (concrete + warmup mask)
+│   ├── registry.py                         # STRATEGIES dict + get_strategy
+│   ├── ma_strategy.py, rsi_strategy.py, rsi_divergence_strategy.py
+│   ├── volume_strategy.py, dip_buy_strategy.py
+│   ├── cumulative_drop_strategy.py, intraday_dip_strategy.py
+│   ├── combined_strategy.py                # AND/OR + sell-wins precedence
+│   └── CONTRIBUTING.md                     # PR bar (code/tests/smoke/docs)
 │
-├── runners/                                 # CLI entry points for legacy systems + setup
-│   ├── run_stock_strategy.py                # legacy stock loop
-│   ├── run_futures_strategy.py              # legacy futures loop
-│   ├── setup_credentials.py                 # first-time creds wizard
-│   ├── test_configuration.py                # sanity-check creds + config files
-│   └── test_indicators.py                   # smoke tests for legacy indicators
+├── execution/
+│   ├── order_manager.py                    # kill-switch + token gate + tracker
+│   ├── order_tracker.py                    # idempotent ledger + crash recovery
+│   ├── pre_trade_validator.py              # 5-rule validator + RiskCheckResult
+│   └── trade_manager.py                    # DEPRECATED (ADR-002); DeprecationWarning on import
 │
-├── stock_strategy/                          # LEGACY equity system (maintenance only)
-│   ├── strategy.py                          # legacy strategy class
-│   └── data_manager.py                      # legacy OHLCV fetch/cache layer
+├── finance/
+│   ├── account_manager.py                  # cash + positions; sync_from_api with drift gate
+│   ├── reconciler.py                       # assert_no_drift; PositionDriftError
+│   └── performance_analyzer.py             # PnL / drawdown / win-rate
 │
-├── futures_strategy/                        # LEGACY futures system (maintenance only)
-│   ├── streaming_data_handler.py            # WebSocket tick handler
-│   └── processing_strategy.py               # futures signal logic
+├── tools/                                  # ★ Phase-7 tool layer
+│   ├── registry.py                         # @tool decorator + invoke()
+│   ├── response.py                         # ToolResponse + ToolError
+│   ├── context.py                          # ToolContext value object
+│   ├── mcp_server.py                       # MCP stdio entry point
+│   └── handlers/
+│       ├── data.py                         # list_symbols, get_history, get_quote, compute_indicators
+│       ├── strategies.py                   # list_strategies
+│       ├── scanner.py                      # scan_market
+│       ├── backtest.py                     # run_backtest, walk_forward
+│       ├── account.py                      # get_account, get_positions, get_audit_log
+│       ├── health.py                       # health_check
+│       └── orders.py                       # validate_order, submit_order, cancel_order
 │
-├── simple_wow/                              # LEGACY async order placement framework
-│   ├── main.py                              # async runner
-│   ├── trading_asyncio_module.py            # asyncio order placement engine
-│   ├── smart_order_manager.py               # order lifecycle management
-│   ├── signal_generator.py / signal_generator_2.py  # signal pipelines
-│   ├── config_manager.py                    # YAML config loader (this module's own)
-│   ├── strategy_config.yaml / credentials.yaml      # local configs
-│   └── strategies/
-│       ├── base_strategy.py
-│       └── rsi_strategy.py
+├── agents/                                 # ★ Phase-8 + Phase-9 agents
+│   ├── research.py                         # research_strategy_for_symbol → ResearchNote
+│   ├── scanner.py                          # daily_scan → ScannerReport
+│   ├── risk.py                             # evaluate_proposed_order → RiskOpinion
+│   ├── paper_trader.py                     # paper_trade_cycle → PaperTradeReport
+│   ├── live_trader.py                      # refusal stub until graduation
+│   ├── continuous.py                       # decisions_dataset, strategy_proposal_brief, drift_check, flag_tool_output
+│   └── prompts/                            # LLM system prompts for each agent
 │
-└── stock_system_v2/                         # ★ PRIMARY production system — new work goes here
-    ├── main.py                              # AutoTrader entry point (live loop)
-    ├── config.py                            # symbol universe + risk params
-    │
-    ├── auth/
-    │   └── auth.py                          # StockAuth: JWT load/save + OTP renewal
-    │
-    ├── data_ingest/
-    │   └── data_provider.py                 # vnstock (KBS) historical fetch + CSV cache + live merge
-    │
-    ├── core/
-    │   ├── stock_api_client.py              # sync TCBS REST client (V2)
-    │   ├── indicator_engine.py              # single-pass pandas-ta indicator computation
-    │   ├── market_scanner.py                # iterates symbols × strategies → today's signals
-    │   ├── backtester.py                    # historical strategy simulation engine
-    │   └── auto_trader.py                   # orchestrator: auth → scan → execute
-    │
-    ├── strategies/                          # all V2 strategies inherit SignalStrategy
-    │   ├── strategy.py                      # SignalStrategy base class
-    │   ├── combined_strategy.py             # AND/OR aggregation of multiple strategies
-    │   ├── ma_strategy.py                   # SimpleMAStrategy
-    │   ├── rsi_strategy.py                  # RSIStrategy
-    │   ├── rsi_divergence_strategy.py       # RSIDivergenceStrategy (unverified, see commit history)
-    │   ├── volume_strategy.py               # VolumeBoomStrategy
-    │   ├── intraday_dip_strategy.py         # IntradayDipStrategy
-    │   ├── dip_buy_strategy.py              # DipBuyStrategy
-    │   └── cumulative_drop_strategy.py      # CumulativeDropStrategy
-    │
-    ├── execution/
-    │   ├── order_manager.py                 # places live/paper orders (safe-mode default ON)
-    │   ├── order_tracker.py                 # tracks open orders + fills
-    │   └── trade_manager.py                 # paper trading simulator (positions, cash, PnL)
-    │
-    ├── finance/
-    │   ├── account_manager.py               # mock 100M VND balance; can sync real TCBS assets
-    │   └── performance_analyzer.py          # PnL / drawdown / win-rate metrics
-    │
-    ├── scripts/                             # operator-facing CLI tools (run directly)
-    │   │  # — main entry points —
-    │   ├── scan_market.py                   # ★ daily live signal scan
-    │   ├── backtest_market.py               # ★ full-universe backtest
-    │   ├── backtest_intraday_dip.py         # backtest intraday dip strategy
-    │   ├── backtest_weekly_top3.py          # weekly top-3 momentum backtest
-    │   ├── screen_dip_stocks.py             # one-off dip screener
-    │   ├── crisis_hedge_calculator.py       # short-gamma hedge sizing helper
-    │   │  # — analytics / visualization —
-    │   ├── analyze_performance.py
-    │   ├── view_portfolio.py
-    │   ├── visualize_trades.py
-    │   │  # — verification suite (run after changes) —
-    │   ├── verify_backtest.py
-    │   ├── verify_data_provider.py
-    │   ├── verify_live_price.py
-    │   ├── verify_account.py
-    │   ├── verify_analytics.py
-    │   ├── verify_order.py
-    │   │  # — probes (manual API exploration; not part of pipeline) —
-    │   ├── probe_history.py / probe_signal.py / probe_profile.py
-    │   ├── probe_assets.py / probe_vnstock.py
-    │   │  # — misc test/utility scripts —
-    │   ├── fetch_real_assets.py             # pulls real TCBS holdings into AccountManager
-    │   ├── test_real_account.py / test_live_sync.py / test_endpoint.py / test_vnstock_vci.py
-    │   └── logs/                            # per-script log output
-    │
-    ├── exports/                             # default backtest output dir (overridable via EXPORT_DIR)
-    └── data/                                # default cache dir (overridable via DATA_DIR)
+└── scripts/                                # operator-facing CLIs
+    ├── scan_market.py                      # ★ daily live signal scan
+    ├── backtest_market.py                  # ★ full-universe backtest
+    ├── backtest_top3_phase2_rebaseline.py  # Phase-2 rebaseline (cost delta proof)
+    ├── strategy_smoke.py                   # invoked by `make strategy-smoke`
+    └── …probes/verify scripts
+
+tests/                                      # 193+ tests, network-free
+├── conftest.py                             # ohlcv_factory fixture
+├── fakes/                                  # FakeStockApiClient, FakeDataProvider
+├── fixtures/                               # HPG/TCB/FPT 500-bar CSVs + expected signals
+├── strategies/                             # regression seal + no-lookahead per strategy
+├── utils/lookahead.py                      # assert_no_lookahead utility
+├── test_obs.py, test_health.py             # Phase-6
+├── test_pre_trade_validator.py, test_order_manager.py, test_order_tracker.py,
+│   test_position_reconciler.py, test_crash_recovery.py    # Phase-5
+├── test_walk_forward.py, test_backtest_result.py, test_costs.py    # Phase-2
+├── test_settings.py, test_schemas.py, test_exceptions.py            # Phase-3
+├── test_tools_smoke.py                     # Phase-7 end-to-end via invoke()
+├── test_agents.py                          # Phase-8 agent recipes
+└── test_continuous.py                      # Phase-9 primitives
 
 docs/
-└── tcbs_openapi.json                        # captured TCBS OpenAPI spec for reference
-
-logs/                                        # rotating log files written by fast_logger
+├── AI_INTEGRATION_PLAN.md                  # ★ master plan (read this first)
+├── AI_INTEGRATION_TODO.md                  # ★ checklist with per-item status
+├── ADR-001-data-source.md                  # vnstock-only vs both+reconciler (Option B)
+├── ADR-002-execution-path.md               # AutoTrader canonical, TradeManager deprecated
+├── ADR-003-tool-protocol.md                # MCP picked over HTTP
+├── PHASE2_TOP3_REBASELINE.md               # cost-impact rebaseline report
+├── PHASE5_SOAK_RUNBOOK.md                  # operator runbook for paper soak + first live trade
+├── PHASE8_PAPER_TRADER_RUNBOOK.md          # operator runbook for 4-week paper-trader soak
+└── …existing playbooks/glossaries
 ```
 
-**Quick navigation tips:**
-- New strategy → drop in `stock_system_v2/strategies/`, register in `combined_strategy.py` or call sites.
-- New indicator → extend `core/indicator_engine.py` (avoid TA-Lib; the V2 system is pandas-ta).
-- API issue → `auth/auth.py` (token) → `core/stock_api_client.py` (REST) → check `docs/tcbs_openapi.json`.
-- Anything in `stock_strategy/`, `futures_strategy/`, `simple_wow/`, `indicators/`, `core/` (top-level), `ws_clients/` is **legacy**; do not extend, only patch.
+## Per-phase landing notes
 
-## Key Dependencies
+The full per-task status is in `docs/AI_INTEGRATION_TODO.md`. Quick map:
 
-- `vnstock` — historical OHLCV data (KBS source configured in `data_provider.py`)
-- `pandas-ta` — vectorized technical indicator computation
-- `TA-Lib` — used in legacy `indicators/` module
-- `PyYAML` — configuration loading
-- `aiohttp` / `websockets` — async TCBS API and WebSocket clients
+| Phase | Theme | Status |
+|---|---|---|
+| 0 | Test harness foundation | done; pytest + CI + 56-test seal |
+| 1 | Data correctness | done; OHLCVFrame + reconciler + partial-bar fix |
+| 2 | Backtesting rigor | done; costs + sizers + walk-forward + survivor-bias disclaimer |
+| 3 | Public-API contracts | done; schemas + exceptions + DI + Settings + strict-mypy core |
+| 4 | Strategy framework v2 | done; Params + warmup mask + describe + registry + CONTRIBUTING + smoke CI |
+| 5 | Execution safety | code-side done; **2-week paper soak + first live trade are operator-driven** (see PHASE5_SOAK_RUNBOOK.md) |
+| 6 | Observability | done; structured logs + correlation + metrics + decisions.jsonl + health_check |
+| 7 | Tool layer | done; 15 MCP-ready tools + handlers + smoke test |
+| 8 | Agent integration | code-side done; **4-week paper-trader soak is operator-driven** (see PHASE8_PAPER_TRADER_RUNBOOK.md) |
+| 9 | Continuous learning | done; decisions dataset + proposal brief + drift check + tool-quality flagging |
+
+Two operator-driven gates remain (the paper soaks). Everything that
+needs to compile and pass tests does.
+
+## Cross-cutting standards (apply throughout)
+
+- **Type hints on every public function.** `mypy --strict` passes on
+  the typed core (schemas, exceptions, settings, costs, position_sizer).
+  Rest of V2 has 97 known issues that Phase-6/7 rewrites cleared up
+  the surfaces that mattered.
+- **Pydantic at every I/O boundary.** No raw dicts cross modules.
+- **No silent failures.** Every `except` re-raises a typed
+  `StockSystemError` subclass or returns a typed object. No bare
+  `except Exception:` in non-script V2 code (intentional `print()`
+  remains in operator-UX-only paths: scan results table, OTP prompts,
+  sub-account selection).
+- **Idempotency by default.** Side-effecting ops carry
+  client-generated `client_order_id`s; the tracker rejects duplicates
+  and survives `kill -9`.
+- **Read-only first.** New tools default to read-only;
+  `side_effecting=True` is a deliberate flag.
+- **Docstrings as tool specs.** Public docstrings are what an LLM
+  reads — write them like API docs, not internal commentary.
+
+## When you (Claude) work in here
+
+- New strategy → `strategies/CONTRIBUTING.md` checklist; CI runs
+  `make strategy-smoke-all` on any PR touching `strategies/`.
+- New indicator → extend `core/indicator_engine.py`; the audit table
+  in the engine class docstring documents the lookback window.
+- New tool → put a handler in `tools/handlers/<group>.py` decorated
+  with `@tool(...)`; MCP picks it up automatically.
+- New agent recipe → `agents/<name>.py` driving `tools.invoke(...)`
+  only. Add an `agents/prompts/<name>.md` for the LLM equivalent.
+- API issue → `auth/auth.py` (token) → `core/stock_api_client.py`
+  (REST) → `docs/tcbs_openapi.json` for the spec.
+- Anything in `stock_strategy/`, `futures_strategy/`, `simple_wow/`,
+  `indicators/`, top-level `core/`, `ws_clients/`, `runners/`,
+  `utils/`, `logger_utils/` is **legacy** — patch only.
+
+## Key dependencies
+
+- `vnstock` — historical OHLCV (KBS source)
+- `pandas-ta` — vectorized indicators (V2 standard; not TA-Lib)
+- `pydantic` v2 — every cross-module contract; `pydantic.mypy` plugin wired
+- `aiohttp`, `requests` — async + sync HTTP to TCBS
+- `mcp` (optional) — only needed for the MCP server entry point;
+  tests + handlers don't import it

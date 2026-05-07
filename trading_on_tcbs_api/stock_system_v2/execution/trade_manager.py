@@ -1,5 +1,25 @@
+"""DEPRECATED — use `core.auto_trader.AutoTrader` instead.
+
+`TradeManager` is the legacy synchronous executor. Phase-5 ADR-002
+designates `AutoTrader` as the canonical execution path; this module
+remains on disk only as a compatibility shim and emits a
+`DeprecationWarning` on import. New code must not depend on it.
+
+Slated for removal alongside the Phase-6 logging migration.
+"""
+
 import datetime
+import warnings
+
 from trading_on_tcbs_api.stock_system_v2 import config
+
+warnings.warn(
+    "stock_system_v2.execution.trade_manager is deprecated; use "
+    "stock_system_v2.core.auto_trader.AutoTrader (ADR-002).",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 class TradeManager:
     """

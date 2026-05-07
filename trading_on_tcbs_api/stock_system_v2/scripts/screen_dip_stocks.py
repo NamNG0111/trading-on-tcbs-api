@@ -10,8 +10,9 @@ Usage:
 """
 
 import sys
+
 import pandas as pd
-import numpy as np
+
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
 
@@ -80,9 +81,9 @@ def main():
     else:
         symbols = DEFAULT_SYMBOLS
 
-    print(f"--- INTRADAY DIP SCREENING ---")
+    print("--- INTRADAY DIP SCREENING ---")
     print(f"Analyzing {len(symbols)} stocks over {HISTORY_DAYS} days")
-    print(f"Metric: (close_yesterday - low_today) / close_yesterday\n")
+    print("Metric: (close_yesterday - low_today) / close_yesterday\n")
 
     data_provider = DataProvider(auth=None)
     results = []
@@ -98,7 +99,7 @@ def main():
             print(f"  [SKIP] {symbol}: {e}")
 
     print(f"\n\n{'='*100}")
-    print(f"INTRADAY DIP CHARACTERISTICS — SCREENING RESULTS")
+    print("INTRADAY DIP CHARACTERISTICS — SCREENING RESULTS")
     print(f"{'='*100}")
 
     if results:

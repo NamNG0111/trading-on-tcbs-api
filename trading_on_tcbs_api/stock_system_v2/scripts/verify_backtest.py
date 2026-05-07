@@ -1,16 +1,15 @@
 
-import os
-import sys
 
 
 from trading_on_tcbs_api.stock_system_v2.core.backtester import Backtester
 from trading_on_tcbs_api.stock_system_v2.strategies import (
-    SimpleMAStrategy,
-    RSIStrategy,
-    VolumeBoomStrategy,
     CombinedStrategy,
-    DipBuyStrategy
+    DipBuyStrategy,
+    RSIStrategy,
+    SimpleMAStrategy,
+    VolumeBoomStrategy,
 )
+
 
 def verify():
     print("Initializing Backtester...")

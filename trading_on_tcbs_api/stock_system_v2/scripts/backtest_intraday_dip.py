@@ -13,14 +13,17 @@ Usage:
     python3 -m trading_on_tcbs_api.stock_system_v2.scripts.backtest_intraday_dip TCX,FPT,HPG
 """
 
+import os
 import sys
-import pandas as pd
+
 import numpy as np
-from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
-from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
-from trading_on_tcbs_api.stock_system_v2.strategies import IntradayDipStrategy
-from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
+import pandas as pd
+
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
+from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
+from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import VN30
+from trading_on_tcbs_api.stock_system_v2.strategies import IntradayDipStrategy
 
 # ==========================================
 # BACKTEST CONFIGURATION
@@ -142,7 +145,7 @@ def main():
         symbols = DEFAULT_SYMBOLS
 
     print(f"{'='*90}")
-    print(f"INTRADAY DIP-BUY STRATEGY BACKTEST")
+    print("INTRADAY DIP-BUY STRATEGY BACKTEST")
     print(f"{'='*90}")
     print(f"Config: lookback={LOOKBACK_DAYS} days, percentile=P{PERCENTILE:.0f}, "
           f"history={HISTORY_DAYS} days, position={POSITION_SIZE/1e6:.0f}M VND")
@@ -194,7 +197,7 @@ def main():
         total_pnl = df_results['Cum P&L (M VND)'].sum()
         
         print(f"\n{'='*90}")
-        print(f"AGGREGATE SUMMARY")
+        print("AGGREGATE SUMMARY")
         print(f"{'='*90}")
         print(f"  Total Signals:     {total_signals}")
         print(f"  Avg Win Rate:      {avg_win_rate:.1f}%")

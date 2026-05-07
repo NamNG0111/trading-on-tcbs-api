@@ -1,0 +1,7 @@
+# Dev / test dependencies — pinned loosely to avoid breaking CI on minor bumps.
+# Phase 0 establishes the toolchain; Phase 3 will tighten mypy to --strict.
+pytest>=8,<10
+hypothesis>=6.100,<7
+ruff>=0.6,<1
+mypy>=1.10,<2
+pandas-stubs>=2.2

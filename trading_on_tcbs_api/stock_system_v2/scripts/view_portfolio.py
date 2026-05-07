@@ -1,10 +1,9 @@
 import asyncio
-import os
-import sys
+
 from tabulate import tabulate
 
-
 from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
+
 
 async def view_portfolio():
     print("=" * 60)

@@ -1,48 +1,53 @@
-# Stock System V2 Configuration
+"""Back-compat shim — the canonical home is `stock_system_v2.settings.Settings`.
 
-# List of stocks to scan and trade
-SYMBOLS = [
-    "TCB", "HPG", "SSI", "VHM", "VIC", "VRE", "VNM", "FPT"
-]
+Every constant exported below is sourced from `Settings.load()`. New code
+should depend on a `Settings` instance passed in explicitly; this module
+exists so legacy imports (`from … import config`) keep resolving while the
+DI refactor lands incrementally.
+"""
 
-# Risk Management Parameters
-RISK_PARAMS = {
-    "max_capital_per_trade_pct": 0.1,  # Use max 10% of equity per trade
-    "stop_loss_pct": 0.05,             # 5% stop loss
-    "take_profit_pct": 0.10,           # 10% take profit
-    "max_open_positions": 5,           # Max 5 symbols at a time
-}
-
-# Trading Timeframes (if applicable for candles)
-TIMEFRAME = "1D"  # Daily candles
+from __future__ import annotations
 
 import os
-import json
 
-# System Settings
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Go up one level to root
-DATA_DIR = os.path.join(BASE_DIR, "data", "stocks") # Consolidated data directory
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-TOKEN_FILE = os.path.join(BASE_DIR, "config", "token.json")  # Use ROOT token file
-CREDENTIALS_FILE = os.path.join(BASE_DIR, "config", "credentials.yaml") # Use ROOT credentials logic
+from trading_on_tcbs_api.stock_system_v2.settings import (
+    DEFAULT_SYMBOLS,
+    Settings,
+    get_settings,
+)
+
+_settings: Settings = get_settings()
+
+SYMBOLS = list(_settings.symbols)
+TIMEFRAME = _settings.timeframe
+
+RISK_PARAMS = {
+    "max_capital_per_trade_pct": _settings.risk.max_capital_per_trade_pct,
+    "stop_loss_pct": _settings.risk.stop_loss_pct,
+    "take_profit_pct": _settings.risk.take_profit_pct,
+    "max_open_positions": _settings.risk.max_open_positions,
+}
+
+BASE_DIR = str(_settings.base_dir)
+DATA_DIR = str(_settings.data_dir)
+LOG_DIR = str(_settings.log_dir)
+TOKEN_FILE = str(_settings.token_file)
+CREDENTIALS_FILE = str(_settings.credentials_file)
 LOCAL_CONFIG_FILE = os.path.join(BASE_DIR, "config", "local_config.json")
+EXPORT_DIR = str(_settings.export_dir)
+BASE_URL = _settings.base_url
 
-# Load Local Config for Export Paths
-EXPORT_DIR = os.path.join(BASE_DIR, "data", "exports") # Fallback export dir
-if os.path.exists(LOCAL_CONFIG_FILE):
-    try:
-        with open(LOCAL_CONFIG_FILE, "r") as f:
-            _local_config = json.load(f)
-            if "EXPORT_DIR" in _local_config:
-                EXPORT_DIR = _local_config["EXPORT_DIR"]
-            if "DATA_DIR" in _local_config:
-                DATA_DIR = _local_config["DATA_DIR"]
-    except Exception as e:
-        print(f"Warning: Failed to load local_config.json: {e}")
-
-# Ensure export and data dirs exist
-os.makedirs(EXPORT_DIR, exist_ok=True)
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# API Endpoints (TCBS)
-BASE_URL = "https://openapi.tcbs.com.vn"  # Standard base URL from credentials
+__all__ = [
+    "BASE_DIR",
+    "BASE_URL",
+    "CREDENTIALS_FILE",
+    "DATA_DIR",
+    "DEFAULT_SYMBOLS",
+    "EXPORT_DIR",
+    "LOCAL_CONFIG_FILE",
+    "LOG_DIR",
+    "RISK_PARAMS",
+    "SYMBOLS",
+    "TIMEFRAME",
+    "TOKEN_FILE",
+]

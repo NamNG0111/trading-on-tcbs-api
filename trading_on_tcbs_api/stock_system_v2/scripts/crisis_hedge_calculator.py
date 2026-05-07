@@ -35,7 +35,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -453,9 +452,9 @@ def print_full_report(
     print(f"\n  K-Factor = {K_FACTOR}  |  Round: half-round-up to 100 CP")
 
     # ── SECTION 2: Futures hedge ────────────────────────────────────────
-    print(f"\n┌─────────────────────────────────────────────────────┐")
-    print(f"│  SECTION 2: VN30 FUTURES HEDGE CALCULATION          │")
-    print(f"└─────────────────────────────────────────────────────┘\n")
+    print("\n┌─────────────────────────────────────────────────────┐")
+    print("│  SECTION 2: VN30 FUTURES HEDGE CALCULATION          │")
+    print("└─────────────────────────────────────────────────────┘\n")
 
     hedge = compute_futures_hedge(df, vn30f_price, unhedged_tickers, regime)
 
@@ -479,10 +478,10 @@ def print_full_report(
 
     # ── SECTION 3: Unwind plan ──────────────────────────────────────────
     mode_label = "EQUAL VALUE" if batch_mode == "equal_value" else "EQUAL COUNT"
-    print(f"\n┌─────────────────────────────────────────────────────┐")
+    print("\n┌─────────────────────────────────────────────────────┐")
     print(f"│  SECTION 3: UNWIND PLAN — {mode_label:<24s}│")
-    print(f"└─────────────────────────────────────────────────────┘\n")
-    print(f"  Priority weights: ADV 40% + Delta 30% + VN30 20% + Beta 10%\n")
+    print("└─────────────────────────────────────────────────────┘\n")
+    print("  Priority weights: ADV 40% + Delta 30% + VN30 20% + Beta 10%\n")
 
     unwind = generate_unwind_plan(df, vn30f_price, batch_mode=batch_mode)
     for batch_num in sorted(unwind["Batch"].unique()):
@@ -508,9 +507,9 @@ def print_full_report(
     print("-" * 80)
 
     # ── SECTION 4: Action checklist ─────────────────────────────────────
-    print(f"\n┌─────────────────────────────────────────────────────┐")
-    print(f"│  SECTION 4: ACTION CHECKLIST                        │")
-    print(f"└─────────────────────────────────────────────────────┘\n")
+    print("\n┌─────────────────────────────────────────────────────┐")
+    print("│  SECTION 4: ACTION CHECKLIST                        │")
+    print("└─────────────────────────────────────────────────────┘\n")
 
     if hedge.contracts_rounded < 0:
         action = "SHORT"
@@ -522,9 +521,9 @@ def print_full_report(
     print(f"  ☐ Regime hiện tại: {regime.value}")
     print(f"  ☐ Tổng delta chưa hedge: {hedge.unhedged_delta_vnd:+,.0f} VND")
     print(f"  ☐ → Cần {action} {abs(hedge.contracts_rounded)} HĐ VN30F1M @{vn30f_price:,.0f}")
-    print(f"  ☐ Sau khi vào lệnh: GHI CHÉP thời gian, giá, lý do")
+    print("  ☐ Sau khi vào lệnh: GHI CHÉP thời gian, giá, lý do")
     print(f"  ☐ Ngày hôm sau: Follow unwind plan (4 batches, mode={batch_mode})")
-    print(f"  ☐ Close CỔ PHIẾU + FUTURES song song, không close 1 bên trước")
+    print("  ☐ Close CỔ PHIẾU + FUTURES song song, không close 1 bên trước")
     print()
 
     return {

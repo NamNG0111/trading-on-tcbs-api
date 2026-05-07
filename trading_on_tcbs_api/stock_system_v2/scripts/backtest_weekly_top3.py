@@ -1,8 +1,9 @@
 import os
 import sys
-import pandas as pd
-import numpy as np
 import warnings
+
+import pandas as pd
+
 warnings.filterwarnings('ignore')
 
 # Add project root to sys.path
@@ -10,9 +11,10 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from trading_on_tcbs_api.stock_system_v2 import config
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.scripts.scan_market import stock_list
-from trading_on_tcbs_api.stock_system_v2 import config
+
 
 def run_backtest(return_weight=None):
     print("--- WEEKLY TOP 3 CROSS-SECTIONAL BACKTEST ---")
@@ -37,7 +39,7 @@ def run_backtest(return_weight=None):
                 # Only keep dates, strip time
                 df_sym['time'] = df_sym['time'].dt.normalize()
                 dfs.append(df_sym)
-        except Exception as e:
+        except Exception:
             continue
             
     print("\nData fetched. Processing...\n")

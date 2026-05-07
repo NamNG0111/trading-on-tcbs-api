@@ -1,13 +1,18 @@
 
+import asyncio
 import json
 import os
-import asyncio
-from typing import Dict, Any, Optional
-from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
-from trading_on_tcbs_api.stock_system_v2.config import TOKEN_FILE, BASE_DIR
-from trading_on_tcbs_api.stock_system_v2.core.stock_api_client import StockTradingClient
-from trading_on_tcbs_api.utils.config_manager import get_config_manager
 from pathlib import Path
+from typing import Dict
+
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.config import BASE_DIR, TOKEN_FILE
+from trading_on_tcbs_api.stock_system_v2.core.stock_api_client import StockTradingClient
+from trading_on_tcbs_api.stock_system_v2.obs import get_logger, log_event
+from trading_on_tcbs_api.utils.config_manager import get_config_manager
+
+_logger = get_logger("account")
+
 
 class AccountManager:
     """
@@ -30,20 +35,21 @@ class AccountManager:
         self.mock_mode = mock_mode
         self.last_sync_status = "Mock"
         
-        print(f"[Account] Initialized. Mock Mode: {self.mock_mode}")
-        if self.mock_mode:
-            print(f"[Account] Initial Cash: {self.cash:,.0f} VND")
+        log_event(
+            _logger, "account.init",
+            mock_mode=self.mock_mode, initial_cash=self.cash,
+        )
 
     async def sync_from_api(self, target_account: str = None):
         """
         Attempt to fetch Real Assets from TCBS API.
         Updates self.cash, self.positions, self.buying_power.
         """
-        print("\n[Account] Syncing with Real API...")
-        
+        log_event(_logger, "account.sync.start", target_account=target_account)
+
         auth = StockAuth()
         if not auth.validate():
-            print("[Account] Sync Failed: Auth invalid.")
+            log_event(_logger, "account.sync.auth_invalid", level=40)
             return
 
         try:
@@ -76,7 +82,8 @@ class AccountManager:
                         padding = '=' * (4 - len(parts[1]) % 4)
                         payload = json.loads(base64.b64decode(parts[1] + padding).decode('utf-8'))
                         custody_id = payload.get('custodyID') or custody_id
-                except Exception:
+                except (ValueError, KeyError, AttributeError, TypeError):
+                    # JWT parse failure — fall back to credentials.account_id.
                     pass
                 
                 if custody_id:
@@ -88,8 +95,9 @@ class AccountManager:
                             for acc in resp.json():
                                 if acc.get('accountStatus') == 'A' and acc.get('accountNo'):
                                     accounts_to_probe.append(acc.get('accountNo'))
-                    except Exception as e:
-                        print(f"[Account] Warning: Could not fetch sub-accounts automatically: {e}")
+                    except (OSError, ValueError, KeyError, RuntimeError) as e:
+                        log_event(_logger, "account.sync.subaccount_lookup_failed",
+                                  level=30, cause=str(e))
             
             # Absolute fallback
             if not accounts_to_probe and creds.sub_account_id:
@@ -131,18 +139,39 @@ class AccountManager:
                     data_found = True
 
             if data_found or real_cash > 0:
-                print(f"[Account] Sync Success. Real Cash: {real_cash:,.0f}, Pos: {len(real_positions)}")
+                # Phase-5 reconciliation: never silently overwrite. If
+                # the local book has any non-zero positions and the
+                # broker book disagrees, raise `PositionDriftError`.
+                # The legacy first-time-sync (empty local book) is
+                # always allowed.
+                from trading_on_tcbs_api.stock_system_v2.finance.reconciler import (
+                    assert_no_drift,
+                )
+                if any(qty > 0 for qty in self.positions.values()):
+                    threshold = getattr(self, "drift_threshold_shares", 0)
+                    assert_no_drift(
+                        self.positions,
+                        real_positions,
+                        threshold_shares=threshold,
+                    )
+                log_event(
+                    _logger, "account.sync.success",
+                    real_cash=real_cash, n_positions=len(real_positions),
+                )
                 self.cash = real_cash
                 self.positions = real_positions
                 self.buying_power = real_power
                 self.mock_mode = False
                 self.last_sync_status = "Real (Synced)"
             else:
-                print("[Account] Sync Warning: API returned empty data. Keeping Mock state.")
+                log_event(_logger, "account.sync.empty", level=30)
                 self.last_sync_status = "Mock (API Empty)"
 
-        except Exception as e:
-            print(f"[Account] Sync Error: {e}")
+        except (OSError, ValueError, KeyError, RuntimeError, AttributeError) as e:
+            # Network / parse failures during sync. We keep the last
+            # known mock state — silently overwriting positions on a
+            # half-failed sync is the exact bug Phase 5 closes out.
+            log_event(_logger, "account.sync.error", level=40, cause=str(e))
             self.last_sync_status = f"Mock (Error: {e})"
 
     def get_balance(self) -> float:
@@ -204,7 +233,11 @@ class AccountManager:
             if self.mock_mode:
                  pass # managed by get_balance()
             
-            print(f"[Account] Bought {volume} {symbol}. Cash: {self.cash:,.0f}, Pos: {self.positions[symbol]}")
+            log_event(
+                _logger, "account.trade.bought",
+                symbol=symbol, volume=volume, cash=self.cash,
+                holdings=self.positions[symbol],
+            )
             
         elif side in ['NS', 'SELL']:
             self.cash += total_cost
@@ -218,5 +251,8 @@ class AccountManager:
             else:
                 self.positions[symbol] = new_qty
             
-            print(f"[Account] Sold {volume} {symbol}. Cash: {self.cash:,.0f}, Pos: {new_qty}")
+            log_event(
+                _logger, "account.trade.sold",
+                symbol=symbol, volume=volume, cash=self.cash, holdings=new_qty,
+            )
 

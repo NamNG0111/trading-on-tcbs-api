@@ -1,6 +1,7 @@
 
-from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
+
 
 def verify():
     print("--- Verifying Order Manager ---")

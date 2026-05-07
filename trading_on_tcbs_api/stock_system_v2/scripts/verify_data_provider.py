@@ -1,7 +1,7 @@
 
-import pandas as pd
-from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
+
 
 def verify():
     # 1. Init Auth (needed for live price)

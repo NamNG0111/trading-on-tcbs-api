@@ -1,8 +1,11 @@
 
-import requests
 import json
-from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+
+import requests
+
 from trading_on_tcbs_api.stock_system_v2 import config
+from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+
 
 def probe_assets():
     print("--- Probing TCBS Asset APIs ---")
@@ -120,7 +123,7 @@ def probe_assets():
         print(f"--> GET {url_cash}")
         resp_cash = requests.get(url_cash, headers=headers, timeout=10)
         if resp_cash.status_code == 200:
-             print(f"    SUCCESS! Cash Data:")
+             print("    SUCCESS! Cash Data:")
              print(json.dumps(resp_cash.json(), indent=2))
         else:
              print(f"    Failed ({resp_cash.status_code})")
@@ -130,7 +133,7 @@ def probe_assets():
         print(f"--> GET {url_pos}")
         resp_pos = requests.get(url_pos, headers=headers, timeout=10)
         if resp_pos.status_code == 200:
-             print(f"    SUCCESS! Positions Data:")
+             print("    SUCCESS! Positions Data:")
              print(json.dumps(resp_pos.json(), indent=2))
         else:
              print(f"    Failed ({resp_pos.status_code})")
@@ -140,7 +143,7 @@ def probe_assets():
         print(f"--> GET {url_power}")
         resp_power = requests.get(url_power, headers=headers, timeout=10)
         if resp_power.status_code == 200:
-             print(f"    SUCCESS! Purchasing Power:")
+             print("    SUCCESS! Purchasing Power:")
              print(json.dumps(resp_power.json(), indent=2))
         else:
              print(f"    Failed ({resp_power.status_code})")
@@ -154,7 +157,7 @@ def probe_assets():
     try:
         resp = requests.get(url_cust, headers=headers, timeout=10)
         if resp.status_code == 200:
-             print(f"    SUCCESS! Account List:")
+             print("    SUCCESS! Account List:")
              print(json.dumps(resp.json(), indent=2))
         else:
              print(f"    Failed ({resp.status_code}) - {resp.text}")

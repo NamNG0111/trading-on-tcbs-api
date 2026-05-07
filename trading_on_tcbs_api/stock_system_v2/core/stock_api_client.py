@@ -1,11 +1,23 @@
+"""Extended TCBS API client for stock trading operations.
+
+Phase-3 note: the return types below use the `BrokerPayload` /
+`BrokerPayloadList` aliases instead of bare `Dict[str, Any]`. These are
+intentionally permissive — TCBS's OpenAPI surface is sprawling and not
+worth modelling as Pydantic at this layer. The Phase-7 tool layer wraps
+the calls a strategy actually needs and emits typed schemas to callers;
+inside this file we keep the raw JSON shape.
 """
-Extended TCBS API client for stock trading operations
-"""
-import requests
-import json
-from typing import Dict, List, Optional, Union, Any
-from datetime import datetime
+
 import asyncio
+from typing import Any, Dict, List, Optional
+
+import requests
+
+# Alias: a raw JSON-decoded dict from the TCBS REST API. Untyped on
+# purpose — see module docstring. Public callers should consume one of
+# the typed wrappers in `schemas/` instead of these directly.
+BrokerPayload = Dict[str, Any]
+BrokerPayloadList = List[BrokerPayload]
 
 from trading_on_tcbs_api.core.api_client import TCBSClient
 from trading_on_tcbs_api.logger_utils.fast_logger import get_logger
@@ -41,7 +53,7 @@ class StockTradingClient(TCBSClient):
         
         await self.logger.log(f"Initialized stock trading for account: {self.account_no}")
     
-    async def get_account_info(self) -> List[Dict[str, Any]]:
+    async def get_account_info(self) -> BrokerPayloadList:
         """Get account information"""
         try:
             response = await asyncio.to_thread(
@@ -57,7 +69,7 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get account info: {response.status_code}")
                 return []
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting account info: {e}")
             return []
     
@@ -106,7 +118,7 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to place stock order: {response.status_code} - {response.text}")
                 return None
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error placing stock order: {e}")
             return None
     
@@ -152,7 +164,7 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to modify stock order: {response.status_code}")
                 return False
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error modifying stock order: {e}")
             return False
     
@@ -187,12 +199,12 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to cancel stock order: {response.status_code}")
                 return False
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error cancelling stock order: {e}")
             return False
     
     async def get_stock_orders(self, status: str = None, 
-                              from_date: str = None, to_date: str = None) -> List[Dict[str, Any]]:
+                              from_date: str = None, to_date: str = None) -> BrokerPayloadList:
         """
         Get stock orders
         
@@ -231,11 +243,11 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get stock orders: {response.status_code}")
                 return []
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting stock orders: {e}")
             return []
     
-    async def get_stock_positions(self) -> List[Dict[str, Any]]:
+    async def get_stock_positions(self) -> BrokerPayloadList:
         """Get current stock positions"""
         if not self.account_no:
             await self.logger.log_error("Account number not set")
@@ -255,7 +267,7 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get stock positions: {response.status_code}")
                 return []
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting stock positions: {e}")
             return []
     
@@ -279,7 +291,7 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get cash balance: {response.status_code}")
                 return {}
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting cash balance: {e}")
             return {}
     
@@ -321,11 +333,11 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get buying power: {response.status_code}")
                 return {}
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting buying power: {e}")
             return {}
     
-    async def get_order_matches(self, order_id: str = None) -> List[Dict[str, Any]]:
+    async def get_order_matches(self, order_id: str = None) -> BrokerPayloadList:
         """
         Get order execution details
         
@@ -358,12 +370,12 @@ class StockTradingClient(TCBSClient):
                 await self.logger.log_error(f"Failed to get order matches: {response.status_code}")
                 return []
                 
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting order matches: {e}")
             return []
     
     async def validate_order(self, symbol: str, side: str, quantity: int, 
-                           price: float) -> Dict[str, Any]:
+                           price: float) -> BrokerPayload:
         """
         Validate order before placing
         
@@ -403,11 +415,11 @@ class StockTradingClient(TCBSClient):
             
             return {'valid': True, 'reason': 'Order validation passed'}
             
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error validating order: {e}")
             return {'valid': False, 'reason': f'Validation error: {e}'}
     
-    async def get_portfolio_summary(self) -> Dict[str, Any]:
+    async def get_portfolio_summary(self) -> BrokerPayload:
         """Get comprehensive portfolio summary"""
         try:
             # Get all data concurrently
@@ -437,6 +449,6 @@ class StockTradingClient(TCBSClient):
                 'cash_details': cash_balance
             }
             
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError, KeyError, RuntimeError) as e:
             await self.logger.log_error(f"Error getting portfolio summary: {e}")
             return {}

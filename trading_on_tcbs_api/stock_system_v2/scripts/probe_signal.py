@@ -1,8 +1,8 @@
 
-import pandas as pd
 from trading_on_tcbs_api.stock_system_v2.core.backtester import DataProvider
 from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 from trading_on_tcbs_api.stock_system_v2.strategies import SimpleMAStrategy, VolumeBoomStrategy
+
 
 def probe():
     provider = DataProvider()

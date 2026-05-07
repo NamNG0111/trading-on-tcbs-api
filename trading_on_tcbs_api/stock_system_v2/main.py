@@ -1,50 +1,93 @@
-import sys
-import os
+"""Entry point for the V2 standalone live loop.
+
+Composition root: builds every dependency explicitly and hands them to
+`AutoTrader`. No class in `core/`, `execution/`, or `finance/` should
+instantiate its peers — that wiring belongs here.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import time
 
-
-
-# Relative imports work now because we forced package context above if needed
-from trading_on_tcbs_api.stock_system_v2 import config
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.core.auto_trader import AutoTrader
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanner
-from trading_on_tcbs_api.stock_system_v2.execution.trade_manager import TradeManager
+from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
+from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
+from trading_on_tcbs_api.stock_system_v2.execution.order_tracker import OrderTracker
+from trading_on_tcbs_api.stock_system_v2.finance.account_manager import AccountManager
+from trading_on_tcbs_api.stock_system_v2.settings import Settings
+from trading_on_tcbs_api.stock_system_v2.strategies import (
+    CombinedStrategy,
+    RSIStrategy,
+    SimpleMAStrategy,
+    VolumeBoomStrategy,
+)
 
-def main():
+
+def _build_default_strategy() -> CombinedStrategy:
+    ma = SimpleMAStrategy(short_window=20, long_window=50)
+    vol = VolumeBoomStrategy(window=20, threshold_pct=10)
+    rsi = RSIStrategy(period=14)
+    return CombinedStrategy(
+        strategies=[],
+        buy_strategies=[ma, vol],
+        sell_strategies=[rsi],
+        buy_mode="AND",
+        sell_mode="OR",
+    )
+
+
+def main() -> None:
     print("==========================================")
     print("   Stock System V2 - Standalone           ")
     print("==========================================")
-    
-    # 1. Authentication
+
+    settings = Settings.load()
+
     auth = StockAuth()
     print("Initializing Authentication...")
     if not auth.validate():
-        print("❌ Authentication failed. Exiting.")
+        print("Authentication failed. Exiting.")
         return
 
-    print(f"✅ Authenticated. Monitoring {len(config.SYMBOLS)} symbols: {config.SYMBOLS}")
-    
-    # 2. Initialize Components
-    scanner = MarketScanner(auth)
-    trader = TradeManager(auth)
-    
+    print(f"Authenticated. Monitoring {len(settings.symbols)} symbols: {list(settings.symbols)}")
+
+    strategy = _build_default_strategy()
+    scanner = MarketScanner(
+        data_provider=DataProvider(auth=auth),
+        indicator_engine=IndicatorEngine(),
+        strategies={"Default": strategy},
+    )
+    order_tracker = OrderTracker()
+    order_manager = OrderManager(
+        auth=auth,
+        safe_mode=True,
+        execution_disabled=settings.execution_disabled,
+        tracker=order_tracker,
+    )
+    account = AccountManager(initial_cash=100_000_000)
+
+    trader = AutoTrader(
+        settings=settings,
+        auth=auth,
+        scanner=scanner,
+        order_manager=order_manager,
+        order_tracker=order_tracker,
+        account=account,
+    )
+
     print("\nStarting Main Loop (Press Ctrl+C to stop)...")
     try:
         while True:
-            print(f"[{time.strftime('%H:%M:%S')}] Scanning market...")
-            
-            # --- Logic ---
-            opportunities = scanner.scan(config.SYMBOLS)
-            for opp in opportunities:
-                trader.execute(opp)
-            # -------------
-            
-            time.sleep(10) # Wait 10 seconds between scans
-            
+            print(f"[{time.strftime('%H:%M:%S')}] Cycle starting...")
+            asyncio.run(trader.run())
+            time.sleep(10)
     except KeyboardInterrupt:
-        print("\n🛑 System stopped by user.")
-    except Exception as e:
-        print(f"\n⛔ Unexpected error: {e}")
+        print("\nSystem stopped by user.")
+
 
 if __name__ == "__main__":
     main()

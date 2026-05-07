@@ -20,3 +20,70 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["trading_on_tcbs_api*"]
+
+# --- Phase 0 tooling ------------------------------------------------
+# Linter and typechecker are wired up so CI runs them; rules are
+# intentionally permissive at this phase. Phase 3 ratchets mypy to
+# --strict and Phase 4 expands ruff coverage.
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+# Phase 0 scope: V2 package + tests. Legacy modules are documented as
+# maintenance-only in CLAUDE.md and lint-excluded until they're either
+# migrated or removed.
+src = ["trading_on_tcbs_api/stock_system_v2", "tests"]
+extend-exclude = [
+    "trading_on_tcbs_api/simple_wow",
+    "trading_on_tcbs_api/stock_strategy",
+    "trading_on_tcbs_api/futures_strategy",
+    "trading_on_tcbs_api/indicators",
+    "trading_on_tcbs_api/runners",
+    "trading_on_tcbs_api/core",
+    "trading_on_tcbs_api/ws_clients",
+    "trading_on_tcbs_api/utils",
+    "trading_on_tcbs_api/logger_utils",
+    "trading_on_tcbs_api/test_signals.py",
+    "test_*.py",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+    "E501",
+    "B008",
+]
+
+[tool.mypy]
+python_version = "3.9"
+files = ["trading_on_tcbs_api/stock_system_v2"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = false
+plugins = ["pydantic.mypy"]
+exclude = [
+    # Scripts are operator-facing CLIs and probes — they read like Jupyter
+    # notebooks. Phase 7 will replace the ones that matter with tool calls.
+    "trading_on_tcbs_api/stock_system_v2/scripts/",
+    # Legacy execution path — superseded by AutoTrader (Phase 5 ADR-002).
+    "trading_on_tcbs_api/stock_system_v2/execution/trade_manager.py",
+]
+
+# Phase 3 — strict on the typed core (schemas / exceptions / settings /
+# value-object modules). The rest of the V2 package has known gaps
+# (untyped pandas slicing, broker-payload dicts) that Phase 6/7 cleans
+# up; restricting strict to the new modules keeps the gate honest
+# without churning legacy code.
+[[tool.mypy.overrides]]
+module = [
+    "trading_on_tcbs_api.stock_system_v2.exceptions",
+    "trading_on_tcbs_api.stock_system_v2.settings",
+    "trading_on_tcbs_api.stock_system_v2.schemas",
+    "trading_on_tcbs_api.stock_system_v2.schemas.*",
+    "trading_on_tcbs_api.stock_system_v2.core.costs",
+    "trading_on_tcbs_api.stock_system_v2.core.position_sizer",
+]
+strict = true
+disallow_untyped_defs = true

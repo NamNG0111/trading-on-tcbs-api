@@ -1,18 +1,18 @@
 
 import sys
-import os
 
-
-from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanner
 from trading_on_tcbs_api.stock_system_v2.auth.auth import StockAuth
+from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
+from trading_on_tcbs_api.stock_system_v2.core.market_scanner import MarketScanner
+from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
 from trading_on_tcbs_api.stock_system_v2.strategies import (
+    CombinedStrategy,
+    CumulativeDropStrategy,
+    DipBuyStrategy,
+    RSIDivergenceStrategy,
+    RSIStrategy,
     SimpleMAStrategy,
     VolumeBoomStrategy,
-    RSIStrategy,
-    RSIDivergenceStrategy,
-    CombinedStrategy,
-    DipBuyStrategy,
-    CumulativeDropStrategy
 )
 
 # VN30 List (Approximate)
@@ -42,7 +42,7 @@ stock_list = [
 ]
 
 def main():
-    print(f"--- DAILY MARKET SCANNER (VN30) ---")
+    print("--- DAILY MARKET SCANNER (VN30) ---")
     
     # 0. Initialize Auth (Crucial for Live Data)
     auth = StockAuth()
@@ -129,7 +129,7 @@ def main():
         f"DipBuy ({dip_buy.drop_pct}%)": strat_dip,
         f"Volume Breakout ({vol_buy.threshold_multiplier * 100 - 100:.0f}%)": strat_vol,
         f"RSI Basic (<{rsi_basic.oversold})": strat_rsi_basic,
-        f"RSI Reversal (Entry)": strat_rsi_reversal,
+        "RSI Reversal (Entry)": strat_rsi_reversal,
         f"{roc_buy.days}-Day Drop ({roc_buy.drop_pct}%)": strat_roc,
         f"SMA Crossover ({sma_cross.short_window}/{sma_cross.long_window})": strat_sma_cross,
         f"RSI Divergence (lookback={rsi_div.lookback})": strat_rsi_div
@@ -140,8 +140,12 @@ def main():
         print(f"[{key}] -> {strat.get_brief() if hasattr(strat, 'get_brief') else 'No description available.'}")
     print("---------------------------------------\n")
     
-    # 2. Initialize Scanner with Auth
-    scanner = MarketScanner(strategies=my_strategies, auth=auth)
+    # 2. Initialize Scanner with explicit dependencies (Phase-3 DI).
+    scanner = MarketScanner(
+        data_provider=DataProvider(auth=auth),
+        indicator_engine=IndicatorEngine(),
+        strategies=my_strategies,
+    )
     
     # 3. Run Scan
     # Use list u wanted to run
