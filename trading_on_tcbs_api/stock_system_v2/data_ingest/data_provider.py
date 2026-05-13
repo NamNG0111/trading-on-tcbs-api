@@ -242,6 +242,12 @@ class DataProvider:
             try:
                 df = pd.read_csv(cache_file)
                 df['time'] = pd.to_datetime(df['time'])
+                # Heal any pre-existing duplicate timestamps in older caches.
+                df = (
+                    df.drop_duplicates(subset='time', keep='last')
+                      .sort_values('time')
+                      .reset_index(drop=True)
+                )
 
                 if not df.empty:
                     last_date = df['time'].max().date()
@@ -298,6 +304,14 @@ class DataProvider:
                                 df[col] = df[col] * meta.vnstock_price_scale
 
                     df['time'] = pd.to_datetime(df['time'])
+                    # vnstock occasionally returns today's bar twice (an
+                    # intraday snapshot + a later refresh). Dedupe on time
+                    # keeping the latest row so the cache stays schema-valid.
+                    df = (
+                        df.drop_duplicates(subset='time', keep='last')
+                          .sort_values('time')
+                          .reset_index(drop=True)
+                    )
                     # Closed-bar default; the live-merge step below sets True
                     # on today's row when it appends one.
                     df['is_partial'] = False
