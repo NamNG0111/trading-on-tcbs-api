@@ -227,7 +227,7 @@ Build agents in ascending risk order. Each soak-tests before next.
   - [ ] No risk-rule violations
   - [ ] Audit trail matches reasoning
   - [ ] Performance roughly tracks backtest expectations
-- [x] **Live Trader Agent** — only after graduation. Hard caps: max position size, max daily loss, max trades/day. Kill-switch wired. → `agents/live_trader.py` is a structured refusal stub: `live_trade_cycle()` raises `NotImplementedError` pointing at the runbook. Real implementation lands only after paper-trader graduation; the gate is intentional.
+- [~] **Live Trader Agent** — only after graduation. Hard caps: max position size, max daily loss, max trades/day. Kill-switch wired. → `agents/live_trader.py` is currently a structured refusal stub (`live_trade_cycle()` raises `NotImplementedError`). **Superseded by Phase 10** — real implementation lands as HITL-by-default with auto-mode toggle. See Phase 10 for the rewrite.
 
 **DoD:** Research agent answers "best strategy for HPG right now?" defensibly + auditably in one prompt. → `tests/test_agents.py::test_research_agent_ranks_strategies_for_hpg` verifies the recipe; `prompts/research.md` is the LLM equivalent. Both produce a `ResearchNote` with explicit recommendation, per-strategy OOS Sharpe + trade count + drawdown, and the survivor-bias disclaimer. 187 tests green.
 
@@ -239,6 +239,91 @@ Build agents in ascending risk order. Each soak-tests before next.
 - [x] Periodic strategy-proposal agent run; output is a PR (code + backtest + walk-forward). → `agents.continuous.strategy_proposal_brief()` produces a `StrategyProposalBrief` listing the registry bucketed by `expected_regime` and flagging regimes with ≤1 strategies as gaps. The PR-bar (CONTRIBUTING.md + smoke gate) was wired in Phase 4 and CI runs it on PRs touching `strategies/`.
 - [x] Drift-detection agent: live PnL vs backtest expectation; alert on threshold breach. → `agents.continuous.drift_check(strategy, symbol, observed_live_return_pct, threshold_pct_points)` calls `walk_forward` for the OOS expectation, computes the delta, emits a `DriftAlert`. Breaches log a `drift.alert.breach` event + `drift.alerts` metric.
 - [x] Tool-quality feedback loop: agent flags bad tool outputs → Phase 3 contract fixes. → `agents.continuous.flag_tool_output(tool_name, issue, …)` appends one row to `EXPORT_DIR/tool_quality.jsonl` with severity, args, received payload, and correlation_id. Reviewed weekly to either tighten the tool contract or close the flag.
+
+---
+
+## Phase 10 — Human-in-the-Loop Live Trader (Weeks 15–16) ★ HIGH RISK
+
+Goal: Real-money trading with HITL-by-default; every signal asks for human confirmation before placement; strict re-validation after confirmation; runtime toggle to full-auto for when operator trusts the system.
+
+**Design decisions locked:**
+- Confirmation channels: **Terminal + Telegram** (both supported; operator picks via `Settings.confirmation_channel`).
+- Re-validation: **STRICT** — originating strategy must re-emit the same signal on a NEW bar after confirmation; price drift must be within `max_price_drift_pct` (default 2%).
+- Telegram lib: **`python-telegram-bot`** (async-native, batteries-included).
+- Hard caps land in this phase (not deferred): `max_position_size_vnd`, `max_daily_loss_vnd`, `max_trades_per_day` — enforced inside `PreTradeValidator` so both HITL and auto paths inherit them.
+
+### Chunk 1 — Pending-signal store + schemas (0.5d) ✓
+
+- [x] Add `schemas/pending_signal.py` with `PendingSignal` Pydantic model (id, ts, expires_at, symbol, side, strategy_name, strategy_params, ref_price, ref_bar_close_ts, proposed_volume, proposed_notional_vnd, status, revalidation_result, correlation_id). → `PendingSignal.from_scan(...)` constructor; `with_status(...)` for immutable-style transitions; `is_expired()` / `is_terminal()` helpers; `OPEN_STATUSES` + `TERMINAL_STATUSES` frozensets exported.
+- [x] Add `schemas/revalidation.py` with `RevalidationResult` + `RevalCheck` rows. → `RevalCheckName` Literal covers `signal_reemitted | new_bar | price_drift | freshness`; `failed_checks` property surfaces the failing rules.
+- [x] Add `PendingSignal.status` Literal: `awaiting | confirmed | rejected | expired | stale | submitted | failed`. → defined in `schemas/pending_signal.py`; `TERMINAL_STATUSES` includes all but `awaiting` and `confirmed`.
+- [x] Add `execution/hitl/pending_signal_store.py` — JSONL-backed durable store at `EXPORT_DIR/pending_signals.jsonl`. Append-only writes; `load_open()` reads back non-terminal entries on startup. → `PendingSignalStore` with `append` / `update_status` / `get` / `load_open` / `iter_all` / `expire_overdue` (idempotent sweeper). Every write flushes + fsyncs so `kill -9` between transitions is safe.
+- [x] Tests: `test_pending_signal_store.py` — persistence, expiry computation, restart recovery, status transitions, concurrent-append safety. → 12 tests covering schema invariants, append/get round-trip, history preservation, restart-recovery via `load_open`, sweeper idempotency, and confirmed-doesn't-auto-expire. 205 tests total green.
+
+### Chunk 2 — Strict re-validator (0.5d) ✓
+
+- [x] Add `execution/hitl/revalidator.py::StrictRevalidator`. → injects `DataProviderLike` Protocol + `IndicatorEngine`; configurable `max_price_drift_pct` + `lookback_days`.
+- [x] Force-refresh OHLCV via `DataProvider` (bypass cache for the symbol). → `force_update=True, include_live=False` enforced on every check; covered by `test_force_update_is_set_on_fetch`.
+- [x] Instantiate strategy from `pending.strategy_name` + `strategy_params` via the `STRATEGIES` registry. → `get_strategy(...)` look-up; unknown strategies fail the `signal_reemitted` check with a structured detail.
+- [x] Check 1 — **signal still emitted**: latest closed bar's signal for that strategy must equal `pending.side`. → maps BUY→1 / SELL→-1; runs the full IndicatorEngine + strategy pipeline on the fresh frame.
+- [x] Check 2 — **new bar**: `fresh_bar_close_ts > pending.ref_bar_close_ts`. → strict `>`; same-bar case fails (covered by `test_same_bar_fails_new_bar_check`).
+- [x] Check 3 — **price drift**: `abs(last_close - ref_price) / ref_price <= max_price_drift_pct`. → inclusive cap; the cap value is `%` not decimal (a 2.0 cap means 2%). Tests cover within-cap, exactly-at-cap, and beyond-cap.
+- [x] Returns `RevalidationResult(passed, checks, fresh_price, price_drift_pct, fresh_bar_close_ts, reason)`. → four `RevalCheck` rows (freshness / new_bar / price_drift / signal_reemitted). `reason` is the first failing check's detail; None on pass.
+- [x] Tests: pass case, signal-flipped case, signal-gone case, price-drift case, same-bar (no new bar yet) case. → 12 tests covering all four checks + provider exceptions + only-partial-bars + cap inclusivity + the `force_update` contract. 217 tests green total.
+
+### Chunk 3 — Confirmation channel base + Terminal channel (0.5d) ✓
+
+- [x] Add `execution/hitl/channels/base.py::ConfirmationChannel` Protocol (`request(pending) -> ConfirmationResponse`, `notify_outcome(pending, outcome, details)`, `replay_pending(pendings)`). → `@runtime_checkable` so tests can `isinstance`-check; all three methods are async.
+- [x] Add `ConfirmationResponse(decision: Literal["yes","no","timeout"], answered_at, raw)`. → also carries `signal_id` + optional `reason` for richer rejection logs.
+- [x] Add `execution/hitl/channels/terminal.py::TerminalChannel` using async stdin so the scanner loop never blocks. → uses `asyncio.to_thread(input, ...)` + `asyncio.wait_for` rather than `aioconsole` (no new dep). Permissive reply parsing (`y/yes/1/ok` → yes; `n/no/0/empty/EOF/unknown` → no, safe default).
+- [x] Tests: `test_channel_terminal.py` — mocked input streams (yes / no / EOF / timeout). → 17 tests covering protocol shape, eight reply tokens, EOF handling, pre-expired signal, mid-wait timeout, outcome formatting, replay output, empty-replay no-op. 234 tests total green.
+
+### Chunk 4 — HITL Coordinator + auto-mode toggle (1d) ✓
+
+- [x] Add `Settings.trading_mode: Literal["hitl","auto"] = "hitl"`. → wired in `settings.py`; `hitl` is the default.
+- [x] Add `Settings.confirmation_channel: Literal["terminal","telegram"] = "terminal"`. → wired.
+- [x] Add `Settings.confirmation_timeout_sec: int = 3600` and `Settings.max_price_drift_pct: float = 2.0`. → both validated (`gt=0`, `le=50`).
+- [x] Add `execution/hitl/coordinator.py::HITLCoordinator` orchestrating: scan-signal → pending-store → channel.request → revalidator → validator → order_manager.place_order → channel.notify_outcome → store update. → `handle_signal(...)` is the single entry point; status transitions are all routed through `PendingSignalStore.update_status` so the audit trail is append-only.
+- [x] On `trading_mode=="auto"`: skip channel call, auto-approve, continue to re-validator. → `_ask` short-circuits to `"yes"` in auto mode; revalidator still runs.
+- [x] On `stale` revalidation outcome: write status, log `hitl.signal.stale` event, do **not** place order. → covered by `test_revalidation_fail_marks_stale_no_order_placed`.
+- [x] On startup: load open pending signals, drop expired ones, re-prompt the rest via channel. → `resume_open_pending()` calls `expire_overdue()` first, then `channel.replay_pending(open)`.
+- [x] Emit metrics: `hitl.signal.{dispatched,confirmed,rejected,expired,stale,submitted,failed}`. → `record_metric` calls on every transition; `failed` carries a `reason` label distinguishing validator/broker_reject/exception.
+- [x] Tests: hitl yes/no/timeout, auto-mode skip, auto-mode still revalidates, channel exception treated as no, revalidation fail → stale (no order), validator BLOCK → failed, broker REJECTED → failed, order_manager exception → failed, persistence-for-restart, resume replays via channel, resume expires overdue first. → 15 tests; 249 green total.
+
+### Chunk 5 — Live trader rewrite + hard caps (0.5d) ✓
+
+- [x] Add `Settings.RiskParams.max_position_size_vnd`, `max_daily_loss_vnd`, `max_trades_per_day` with conservative defaults (50M / 10M / 10). Sentinel 0 disables each check.
+- [x] Extend `PreTradeValidator` to enforce all three; reject reason rows feed back into `RiskCheckResult.findings`. Track today's trade count + realized PnL via new `DailyTradeStats` value object the caller passes in (HITLCoordinator wires it through `daily_stats_provider`). Back-compat: callers without `daily_stats` see no new BLOCKs.
+- [x] Rewrite `agents/live_trader.py::live_trade_cycle()` to: pre-flight `health_check` (abort on fail), resume open pending signals, scan, dispatch each signal through `HITLCoordinator.handle_signal`, return `LiveTradeReport(dispatched, n_submitted, n_failed, n_rejected, n_expired, aborted_reason)`.
+- [x] Remove `NotImplementedError` stub. → exported from `agents/__init__.py` alongside other recipes.
+- [x] Tests: position-size cap (block on projected exceed, block with existing holding, pass when under, disabled-when-zero, SELL exempt); trades/day cap (block at limit, pass below, no-daily_stats no-block, disabled-when-zero); daily-loss cap (block at floor, pass within, profit irrelevant); Settings wiring; live trader (health-fail abort, dispatch-all-signals, resume-before-dispatch, status counters). → 13 cap tests + 4 live-trader tests; 266 total green.
+
+### Chunk 6 — HITL tools + MCP exposure (0.5d) ✓
+
+- [x] Add `tools/handlers/hitl.py` with: `list_pending_signals` (read-only; `include_terminal` flag + `limit`), `confirm_signal(id)` (side-effecting; routes through `coordinator.confirm_pending` → revalidator → validator → order), `reject_signal(id, reason)` (side-effecting; idempotent on terminal), `set_trading_mode(mode, confirm)` (side-effecting; `confirm=True` required to apply, else dry-run echo).
+- [x] Coordinator extended with public out-of-band methods `confirm_pending(id)`, `reject_pending(id)`, `set_trading_mode(mode)`. `_process` and `confirm_pending` now share the `_post_confirm` helper so the channel-driven and tool-driven paths run identical revalidator + placement logic.
+- [x] `ToolContext` extended with `hitl_coordinator` + `pending_signal_store` slots; tools fail loudly when unconfigured. Tools import-registered via `tools/__init__.py`.
+- [x] Async-from-sync: `confirm_signal` / `reject_signal` wrap the coordinator coroutines in `asyncio.run`, matching the rest of the sync tool layer. The MCP transport works unchanged.
+- [x] Tests: `test_tools_hitl.py` — list (open-only, include_terminal, limit), confirm (full pipeline, unknown id → INVALID_PARAMS, terminal idempotency), reject (mark + unknown), set_trading_mode (dry-run without confirm, applied with confirm), registration sanity (side_effecting flags). 11 tests; 277 total green.
+
+### Chunk 7 — Telegram channel (1d) ✓
+
+- [x] Add `python-telegram-bot>=22.0` to `requirements.txt`. → also httpx / httpcore / h11 / anyio as transitive deps. Module gracefully sets `TelegramChannel = None` when the import fails, so non-Telegram installs are unaffected.
+- [x] Wire `telegram_bot_token: str | None` and `telegram_chat_id: str | None` into `Settings`. → optional; required only when `confirmation_channel='telegram'`.
+- [x] Add `execution/hitl/channels/telegram.py::TelegramChannel` using `Application.builder().token(...).build()` + `start_polling()`. Inline keyboard with ✅ / ❌ buttons; `callback_data = f"{signal_id}:{yes|no}"`. The `request()` method registers an `asyncio.Future` keyed on signal_id; the `CallbackQueryHandler` resolves the future. Lifecycle: `await chan.start()` + `await chan.stop()`.
+- [x] On startup, `replay_pending` re-sends any signals still in `awaiting` state. → header line + one prompt per signal; failures per-signal are logged and skipped (not fatal).
+- [x] Outcome notifications include submitted/rejected/stale/expired/failed with emoji-prefixed lines. → `notify_outcome` swallows send errors so the durable row is the source of truth.
+- [x] Tests: `test_channel_telegram.py` — FakeBot recording `send_message` calls; yes/no callback resolution; timeout when no callback fires; pre-expired short-circuit; inline-keyboard contract; send-failure unregisters waiter; outcome notification shape; replay header + per-signal; orphan callbacks no-op; `stop()` resolves outstanding waiters as `no`. 15 tests; 292 total green.
+- [ ] Manual test (operator): full bot round-trip on a real Telegram chat against fixture signals. → operator-driven; runbook step in Chunk 8.
+
+### Chunk 8 — Docs + runbook (0.5d) ✓
+
+- [x] Write `docs/PHASE10_HITL_RUNBOOK.md`: pre-flight, terminal vs Telegram setup (BotFather walkthrough + smoke checklist), mode toggle, signal lifecycle diagram, MCP tools table, stuck-signal recovery, emergency auto-off (two layers), audit trails, DoD checklist.
+- [x] Update `CLAUDE.md`: architecture diagram now shows HITL Coordinator layer + 19 tools + live_trader agent; Configuration section names the new caps + HITL settings; Codebase map adds `execution/hitl/`; Key dependencies adds optional `python-telegram-bot`; "When you work in here" section adds new-channel + new-cap entries.
+- [x] Update `docs/AI_INTEGRATION_PLAN.md` with a "10b. Phase 10" section between Phase 9 and the cross-cutting standards. Captures design decisions (HITL-by-default, strict re-validation, hard caps, runtime toggle, two channels) + module layout.
+- [x] Update `docs/stock_system_v2_guide.md` with HITL coordinator section, codebase-map entry for `execution/hitl/`, and a Phase-10 row in the per-phase status table.
+
+**DoD:** End-to-end on real account in HITL mode: scanner fires a signal → Telegram prompt → operator taps ✅ → strict re-validation passes → live order placed → confirmation message arrives in Telegram. Auto-mode toggle verified on paper account. All hard caps proven by test. Restart in the middle of a pending confirmation recovers cleanly.
 
 ---
 
@@ -261,3 +346,16 @@ Build agents in ascending risk order. Each soak-tests before next.
 3. **Week 3** — Phase 2 item 1 (eliminate look-ahead) + `assert_no_lookahead` utility.
 4. **Week 4** — Phase 3 items 1+2 (Pydantic schemas + typed exceptions).
 5. **Week 5** — MCP-vs-HTTP decision + start writing Phase-3 docstrings in tool-spec form.
+
+---
+
+## Order-of-Battle (Phase 10, ~5 days code)
+
+1. **Day 1 (AM)** — Chunk 1: pending-signal store + schemas.
+2. **Day 1 (PM)** — Chunk 2: strict re-validator.
+3. **Day 2 (AM)** — Chunk 3: terminal channel.
+4. **Day 2 (PM) – Day 3** — Chunk 4: coordinator + auto toggle + restart recovery.
+5. **Day 4 (AM)** — Chunk 5: live trader rewrite + hard caps.
+6. **Day 4 (PM)** — Chunk 6: HITL tools + MCP.
+7. **Day 5** — Chunk 7: Telegram channel + manual round-trip.
+8. **Day 5 (PM)** — Chunk 8: runbook + doc updates.

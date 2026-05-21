@@ -214,7 +214,7 @@ inside the workflow body.
 | Scanner | `daily_scan(...) → ScannerReport` | `agents/prompts/scanner.md` |
 | Risk | `evaluate_proposed_order(req) → RiskOpinion` | `agents/prompts/risk.md` |
 | Paper Trader | `paper_trade_cycle(...) → PaperTradeReport` | `agents/prompts/paper_trader.md` |
-| Live Trader | `live_trade_cycle(...)` — refusal stub | (gated until graduation) |
+| Live Trader (Phase 10) | `live_trade_cycle(coord, ...) → LiveTradeReport` — HITL-by-default | (operator-driven, see PHASE10_HITL_RUNBOOK.md) |
 
 Phase-9 continuous-learning primitives in `agents/continuous.py`:
 `decisions_dataset(...)` aggregates the audit log; `strategy_proposal_brief()`
@@ -239,9 +239,39 @@ The full per-task status is in `docs/AI_INTEGRATION_TODO.md`. Quick map:
 | 7 | Tool layer | done; 15 MCP-ready tools + handlers + smoke test |
 | 8 | Agent integration | code-side done; **4-week paper-trader soak is operator-driven** (see PHASE8_PAPER_TRADER_RUNBOOK.md) |
 | 9 | Continuous learning | done; decisions dataset + proposal brief + drift check + tool-quality flagging |
+| 10 | HITL live trader | code-side done; **first live trade is operator-driven** (see PHASE10_HITL_RUNBOOK.md); coordinator + revalidator + 2 channels + 3 hard caps + 4 MCP tools |
 
-Two operator-driven gates remain (the paper soaks). Everything that
-needs to compile and pass tests does.
+Three operator-driven gates remain (the two paper soaks + the first
+real-money HITL trade). Everything that needs to compile and pass
+tests does — 292+ tests green.
+
+## HITL coordinator (Phase 10)
+
+The live-trade path is human-in-the-loop by default. `HITLCoordinator`
+(in `execution/hitl/coordinator.py`) is the single orchestrator that
+sits between the scanner and the order manager. Per signal:
+
+1. Build a `PendingSignal` with the proposed order's intent (symbol,
+   side, ref_price, strategy_name, strategy_params, volume, notional,
+   timeout). Append to `EXPORT_DIR/pending_signals.jsonl`.
+2. Ask the channel (`TerminalChannel` or `TelegramChannel`) for a
+   yes/no. In `auto` mode this step is skipped — but only this step.
+3. On yes, run `StrictRevalidator` against fresh OHLCV. Four checks
+   (freshness, new_bar, price_drift, signal_reemitted) must all pass
+   or the signal terminates as `stale`.
+4. Run `PreTradeValidator` with the freshly-built `OrderRequest`,
+   `AccountSnapshot`, `MarketContext`, and `DailyTradeStats`. Hard
+   caps live here, not in the coordinator.
+5. Call `OrderManager.place_order(request, risk_check)`. Status
+   transitions to `submitted` (or `failed` on broker rejection).
+
+Every transition writes a new JSONL row to the store. Restart recovery
+calls `resume_open_pending()` which `expire_overdue` first, then
+`channel.replay_pending(open_signals)` — the operator sees a fresh
+prompt for anything still alive.
+
+Out-of-band control via MCP: `list_pending_signals`, `confirm_signal`,
+`reject_signal`, `set_trading_mode` (the last requires `confirm=True`).
 
 ## Full codebase map
 
@@ -294,8 +324,13 @@ trading_on_tcbs_api/stock_system_v2/        # production system
 ├── execution/
 │   ├── order_manager.py                    # kill-switch + token gate + tracker
 │   ├── order_tracker.py                    # idempotent ledger + crash recovery
-│   ├── pre_trade_validator.py              # 5-rule validator + RiskCheckResult
-│   └── trade_manager.py                    # DEPRECATED (ADR-002); DeprecationWarning on import
+│   ├── pre_trade_validator.py              # 8-rule validator + DailyTradeStats + RiskCheckResult
+│   ├── trade_manager.py                    # DEPRECATED (ADR-002); DeprecationWarning on import
+│   └── hitl/                               # ★ Phase 10
+│       ├── coordinator.py                  # HITLCoordinator — scan→channel→reval→validate→place
+│       ├── revalidator.py                  # StrictRevalidator (4 checks, force-refresh OHLCV)
+│       ├── pending_signal_store.py         # append-only JSONL store
+│       └── channels/                       # ConfirmationChannel + Terminal + Telegram
 │
 ├── finance/
 │   ├── account_manager.py                  # cash + positions; sync_from_api with drift gate

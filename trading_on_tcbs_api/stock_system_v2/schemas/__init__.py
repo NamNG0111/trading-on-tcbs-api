@@ -38,6 +38,17 @@ from trading_on_tcbs_api.stock_system_v2.schemas.health import (
     HealthCheck,
     HealthStatus,
 )
+from trading_on_tcbs_api.stock_system_v2.schemas.pending_signal import (
+    OPEN_STATUSES,
+    TERMINAL_STATUSES,
+    PendingSignal,
+    PendingSignalStatus,
+)
+from trading_on_tcbs_api.stock_system_v2.schemas.revalidation import (
+    RevalCheck,
+    RevalCheckName,
+    RevalidationResult,
+)
 from trading_on_tcbs_api.stock_system_v2.schemas.signals import (
     ScanResult,
     Signal,
@@ -82,4 +93,12 @@ __all__ = [
     "WalkForwardWindow",
     "HoldingStrategy",
     "to_backtest_results",
+    # Pending signals / revalidation (Phase 10)
+    "PendingSignal",
+    "PendingSignalStatus",
+    "OPEN_STATUSES",
+    "TERMINAL_STATUSES",
+    "RevalidationResult",
+    "RevalCheck",
+    "RevalCheckName",
 ]

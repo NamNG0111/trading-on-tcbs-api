@@ -18,6 +18,10 @@ from typing import Any, Optional
 
 from trading_on_tcbs_api.stock_system_v2.core.indicator_engine import IndicatorEngine
 from trading_on_tcbs_api.stock_system_v2.data_ingest.data_provider import DataProvider
+from trading_on_tcbs_api.stock_system_v2.execution.hitl import (
+    HITLCoordinator,
+    PendingSignalStore,
+)
 from trading_on_tcbs_api.stock_system_v2.execution.order_manager import OrderManager
 from trading_on_tcbs_api.stock_system_v2.execution.order_tracker import OrderTracker
 from trading_on_tcbs_api.stock_system_v2.execution.pre_trade_validator import (
@@ -39,6 +43,10 @@ class ToolContext:
     order_tracker: OrderTracker
     validator: PreTradeValidator
     auth: Any = None
+    hitl_coordinator: HITLCoordinator | None = None
+    """Phase-10 HITL coordinator. Required for confirm/reject_signal and set_trading_mode tools."""
+    pending_signal_store: PendingSignalStore | None = None
+    """Pending-signal store. Required for list_pending_signals; HITL coordinator owns its own internally."""
     risk_tokens: dict[str, Any] = field(default_factory=dict)
     """In-memory cache of valid `RiskCheckResult`s keyed by `check_id`.
 

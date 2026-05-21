@@ -33,6 +33,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from trading_on_tcbs_api.stock_system_v2.schemas import (
     AccountSnapshot,
     MarketContext,
@@ -40,6 +42,26 @@ from trading_on_tcbs_api.stock_system_v2.schemas import (
     RiskCheckFinding,
     RiskCheckResult,
 )
+
+
+class DailyTradeStats(BaseModel):
+    """Per-day execution stats supplied by the caller for hard-cap checks.
+
+    Phase-10 adds three caps that depend on cross-order state the validator
+    cannot infer alone (a single `OrderRequest` doesn't know how many
+    orders have already fired today). The HITL coordinator builds this
+    object once per signal — typically from `OrderTracker.get_history()`
+    and `AccountManager` — and hands it to the validator.
+
+    All counts/values are "as of right now", before the new order would
+    be placed. The validator does the arithmetic to project post-trade
+    state itself.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    trades_today: int = Field(0, ge=0, description="Orders the system has already submitted today.")
+    realized_pnl_today_vnd: float = Field(0.0, description="Realized PnL today, in VND (negative = loss).")
 
 
 def request_hash(req: OrderRequest) -> str:
@@ -70,6 +92,10 @@ class ValidatorConfig:
     price_band_pct: float = 0.07  # ±7% of last close
     max_notional_vnd: float = 200_000_000.0  # 200M VND default cap
     lot_size: int = 100
+    # — Phase-10 daily/per-position hard caps. Sentinel 0 disables. —
+    max_position_size_vnd: float = 0.0
+    max_daily_loss_vnd: float = 0.0
+    max_trades_per_day: int = 0
 
 
 class PreTradeValidator:
@@ -102,6 +128,7 @@ class PreTradeValidator:
         *,
         account: AccountSnapshot,
         market: MarketContext,
+        daily_stats: "DailyTradeStats | None" = None,
     ) -> RiskCheckResult:
         """Run every rule for `req` against `account` + `market` state.
 
@@ -211,6 +238,64 @@ class PreTradeValidator:
                     details={
                         "open_positions": len(account.positions),
                         "limit": self.config.max_open_positions,
+                    },
+                ))
+
+        # 6. Per-position size cap (BUY only; SELL reduces position).
+        if req.side == "BUY" and self.config.max_position_size_vnd > 0:
+            existing_value = sum(
+                p.quantity * p.avg_cost
+                for p in account.positions
+                if p.symbol == req.symbol
+            )
+            projected_value = existing_value + notional
+            if projected_value > self.config.max_position_size_vnd:
+                findings.append(RiskCheckFinding(
+                    rule="max_position_size",
+                    severity="BLOCK",
+                    message=(
+                        f"Post-trade position value {projected_value:,.0f} VND "
+                        f"would exceed cap {self.config.max_position_size_vnd:,.0f} VND."
+                    ),
+                    details={
+                        "existing_value_vnd": existing_value,
+                        "projected_value_vnd": projected_value,
+                        "cap_vnd": self.config.max_position_size_vnd,
+                    },
+                ))
+
+        # 7. Daily trade-count cap.
+        if daily_stats is not None and self.config.max_trades_per_day > 0:
+            if daily_stats.trades_today >= self.config.max_trades_per_day:
+                findings.append(RiskCheckFinding(
+                    rule="max_trades_per_day",
+                    severity="BLOCK",
+                    message=(
+                        f"Already submitted {daily_stats.trades_today} orders today; "
+                        f"daily cap is {self.config.max_trades_per_day}."
+                    ),
+                    details={
+                        "trades_today": daily_stats.trades_today,
+                        "cap": self.config.max_trades_per_day,
+                    },
+                ))
+
+        # 8. Daily realized-loss cap. The cap is a POSITIVE VND amount;
+        #    block when realized PnL today is more negative than -cap.
+        if daily_stats is not None and self.config.max_daily_loss_vnd > 0:
+            loss_floor = -abs(self.config.max_daily_loss_vnd)
+            if daily_stats.realized_pnl_today_vnd <= loss_floor:
+                findings.append(RiskCheckFinding(
+                    rule="max_daily_loss",
+                    severity="BLOCK",
+                    message=(
+                        f"Realized PnL today {daily_stats.realized_pnl_today_vnd:,.0f} VND "
+                        f"has reached the daily loss floor "
+                        f"({loss_floor:,.0f} VND); no further trades allowed."
+                    ),
+                    details={
+                        "realized_pnl_today_vnd": daily_stats.realized_pnl_today_vnd,
+                        "loss_floor_vnd": loss_floor,
                     },
                 ))
 

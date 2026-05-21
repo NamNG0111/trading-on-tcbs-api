@@ -21,6 +21,7 @@ from .handlers import (  # noqa: F401  (registration side-effects)
     backtest as _backtest,
     data as _data,
     health as _health,
+    hitl as _hitl,
     orders as _orders,
     scanner as _scanner,
     strategies as _strategies,

@@ -40,6 +40,7 @@ from .continuous import (
     flag_tool_output,
     strategy_proposal_brief,
 )
+from .live_trader import LiveTradeReport, live_trade_cycle
 from .paper_trader import PaperTradeReport, paper_trade_cycle
 from .research import ResearchNote, research_strategy_for_symbol
 from .risk import RiskOpinion, evaluate_proposed_order
@@ -48,6 +49,7 @@ from .scanner import ScannerReport, daily_scan
 __all__ = [
     "DecisionsDataset",
     "DriftAlert",
+    "LiveTradeReport",
     "PaperTradeReport",
     "ResearchNote",
     "RiskOpinion",
@@ -58,6 +60,7 @@ __all__ = [
     "drift_check",
     "evaluate_proposed_order",
     "flag_tool_output",
+    "live_trade_cycle",
     "paper_trade_cycle",
     "research_strategy_for_symbol",
     "strategy_proposal_brief",

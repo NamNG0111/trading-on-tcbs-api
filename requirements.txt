@@ -61,3 +61,10 @@ websockets==16.0
 wordcloud==1.9.6
 yarl==1.23.0
 zipp==3.23.1
+
+# Phase 10 — Telegram HITL channel (optional)
+python-telegram-bot>=22.0
+httpx>=0.28.0
+httpcore>=1.0.0
+h11>=0.16.0
+anyio>=4.0.0

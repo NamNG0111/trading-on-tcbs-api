@@ -7,8 +7,10 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 Algorithmic trading system on the Vietnamese TCBS brokerage API. V2
 (`trading_on_tcbs_api/stock_system_v2/`) is the production system —
 typed schemas, Pydantic contracts, structured logs, idempotent
-execution, 15 MCP-callable tools, agent recipes for
-research/scanner/risk/paper-trading.
+execution, 19 MCP-callable tools, agent recipes for
+research/scanner/risk/paper-trading/live-trading. Live trading is
+human-in-the-loop by default (Phase 10): every signal asks for
+confirmation via terminal or Telegram before any order is placed.
 
 **Read these for deeper context** (don't reload them every session):
 
@@ -17,12 +19,13 @@ research/scanner/risk/paper-trading.
 - `docs/stock_system_v2_guide.md` — V2 walkthrough + internals reference
   (data flow, schemas, observability, tool layer, agent layer, full codebase map)
 - `docs/ADR-001` / `ADR-002` / `ADR-003` — data source, execution path, tool protocol
-- `docs/PHASE5_SOAK_RUNBOOK.md`, `docs/PHASE8_PAPER_TRADER_RUNBOOK.md` — operator runbooks
+- `docs/PHASE5_SOAK_RUNBOOK.md`, `docs/PHASE8_PAPER_TRADER_RUNBOOK.md`,
+  `docs/PHASE10_HITL_RUNBOOK.md` — operator runbooks
 
 ## Common commands
 
 ```bash
-# Tests (193+ green; full suite, network-free, ~3s)
+# Tests (292+ green; full suite, network-free, ~7s)
 make test                          # or: python -m pytest tests/
 
 # Lint + typecheck + tests bundle
@@ -59,16 +62,21 @@ V2 is the production system. Legacy code (`stock_strategy/`,
 `ws_clients/`) is in maintenance mode — patch in place, don't extend.
 
 ```
-   Agents (Phase 8/9): research, scanner, risk, paper_trader, continuous-learning
+   Agents (Phase 8/9/10): research, scanner, risk, paper_trader, live_trader,
+                          continuous-learning
         │  drives via tools.invoke(name, args) only — zero internal imports
         ▼
-   Tools (Phase 7):   15 registered tools + ToolResponse / ToolError envelope
+   Tools (Phase 7+10):  19 registered tools + ToolResponse / ToolError envelope
         │  thin wrappers over the production primitives below
         ▼
-   Production V2:     scanner / backtester / order_manager / account / data_provider
+   HITL Coordinator     channel ↔ revalidator ↔ validator ↔ order_manager
+   (Phase 10):          pending_signals.jsonl is the audit-grade source of truth
+        │  hitl mode = ask the human; auto mode = skip the ask, keep revalidating
+        ▼
+   Production V2:       scanner / backtester / order_manager / account / data_provider
         │  Pydantic schemas, typed exceptions, structured logs, correlation IDs
         ▼
-   TCBS / vnstock     external broker (TCBS REST) + market data (vnstock-KBS)
+   TCBS / vnstock       external broker (TCBS REST) + market data (vnstock-KBS)
 ```
 
 Read bottom-up for the safety story; top-down for how an agent uses it.
@@ -87,7 +95,15 @@ list, agent recipes) are in `docs/stock_system_v2_guide.md`.
   in the environment hard-blocks every order regardless of safe-mode.
 
 Risk caps default to `max_capital_per_trade_pct=0.10`,
-`stop_loss_pct=0.05`, `take_profit_pct=0.10`, `max_open_positions=5`.
+`stop_loss_pct=0.05`, `take_profit_pct=0.10`, `max_open_positions=5`,
+`max_position_size_vnd=50_000_000`, `max_daily_loss_vnd=10_000_000`,
+`max_trades_per_day=10`.
+
+HITL (Phase 10): `trading_mode='hitl'` (default) routes every signal
+through the configured `confirmation_channel` (`terminal` | `telegram`)
+before any order is placed. Strict re-validation runs after confirm
+regardless of mode. Telegram setup + emergency auto-off:
+`docs/PHASE10_HITL_RUNBOOK.md`.
 
 ## Codebase map (top level)
 
@@ -102,9 +118,10 @@ trading_on_tcbs_api/stock_system_v2/        # ★ production system
 ├── core/                                   # scanner, backtester, walk_forward, auto_trader, costs, sizers
 ├── strategies/                             # Phase-4 framework + CONTRIBUTING.md
 ├── execution/                              # order_manager, tracker, validator
+│   └── hitl/                               # ★ Phase-10 HITL: coordinator, store, channels, revalidator
 ├── finance/                                # account_manager, reconciler, performance
 ├── tools/                                  # ★ Phase-7 tool layer (registry + handlers + MCP server)
-├── agents/                                 # ★ Phase-8/9 agents + LLM prompts
+├── agents/                                 # ★ Phase-8/9/10 agents + LLM prompts
 └── scripts/                                # operator CLIs: scan_market, backtest_*
 
 tests/                                      # 193+ tests, network-free
@@ -145,6 +162,12 @@ Full per-file map: `docs/stock_system_v2_guide.md` → "Full codebase map".
   with `@tool(...)`; MCP picks it up automatically.
 - New agent recipe → `agents/<name>.py` driving `tools.invoke(...)`
   only. Add an `agents/prompts/<name>.md` for the LLM equivalent.
+- New confirmation channel → implement `ConfirmationChannel` Protocol
+  under `execution/hitl/channels/` (see `terminal.py` for the minimal
+  shape, `telegram.py` for the async-with-callback shape).
+- New hard cap on orders → extend `ValidatorConfig` + add a rule in
+  `PreTradeValidator.validate`; if it needs cross-order state, plumb
+  through `DailyTradeStats`.
 - API issue → `auth/auth.py` (token) → `core/stock_api_client.py`
   (REST) → `docs/tcbs_openapi.json` for the spec.
 - Anything under "Legacy folders" above: patch only.
@@ -157,3 +180,6 @@ Full per-file map: `docs/stock_system_v2_guide.md` → "Full codebase map".
 - `aiohttp`, `requests` — async + sync HTTP to TCBS
 - `mcp` (optional) — only needed for the MCP server entry point;
   tests + handlers don't import it
+- `python-telegram-bot>=22` (optional) — only needed when
+  `confirmation_channel='telegram'`; module gracefully sets
+  `TelegramChannel=None` when missing

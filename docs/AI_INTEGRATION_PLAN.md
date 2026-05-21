@@ -247,6 +247,68 @@ With trustworthy tools in place, build the first agent loops.
 
 ---
 
+## 10b. Phase 10 — Human-in-the-Loop Live Trader (Weeks 15–16)
+
+The Phase-8 Live Trader Agent was originally specified as a
+graduate-then-flip thing — paper-trader runs for four weeks, criteria
+pass, the same agent loop runs against real money with the kill-switch
+moved aside. In practice the operator's stated risk tolerance is
+different: they do not yet trust AI judgment with real funds and
+want to retain a per-signal veto until they choose to surrender it.
+Phase 10 implements that explicitly.
+
+**Design decisions:**
+
+- **HITL-by-default.** `Settings.trading_mode='hitl'` is the default.
+  Every scanner signal becomes a `PendingSignal` written to
+  `EXPORT_DIR/pending_signals.jsonl` and the coordinator asks the
+  operator via the configured channel (terminal or Telegram) before
+  any order goes out. A reply of `no`, a timeout, or a strict
+  re-validation failure all terminate the signal cleanly; the
+  scanner picks up the symbol on its next cycle.
+- **Strict re-validation.** When confirmation arrives — which may be
+  minutes or hours after the original scan — the coordinator force-
+  fetches OHLCV and re-runs the originating strategy on the latest
+  closed bar. The same side must be re-emitted on a NEW bar, and
+  price drift must be within `max_price_drift_pct` (default 2%).
+  Any failure marks the signal `stale` and skips placement.
+- **Three hard caps** added to `PreTradeValidator` and inherited by
+  both HITL and auto paths: `max_position_size_vnd` (per-name post-
+  trade cap), `max_daily_loss_vnd` (realized-loss floor for one day),
+  `max_trades_per_day`. The first applies to BUYs; the latter two
+  need cross-order state passed in as `DailyTradeStats`.
+- **Runtime toggle.** Operators can flip `trading_mode` between
+  `hitl` and `auto` either at startup (settings) or at runtime
+  (`set_trading_mode` MCP tool, which requires explicit `confirm=True`
+  so no LLM or fat-fingered keystroke can silently disable the human
+  gate). Restarts revert to `Settings.trading_mode` by design.
+- **Two channels.** Terminal for development; Telegram (inline
+  ✅/❌ buttons) for mobile-friendly approvals during normal use.
+  Both implement `ConfirmationChannel` Protocol; new channels are
+  drop-in.
+
+**Module layout:**
+
+```
+execution/hitl/
+├── coordinator.py            # HITLCoordinator — orchestration
+├── revalidator.py            # StrictRevalidator — 4 checks
+├── pending_signal_store.py   # append-only JSONL durable queue
+└── channels/
+    ├── base.py               # ConfirmationChannel Protocol
+    ├── terminal.py           # stdin/stdout, asyncio.to_thread
+    └── telegram.py           # python-telegram-bot, long-polling
+```
+
+Tools (`tools/handlers/hitl.py`): `list_pending_signals`,
+`confirm_signal`, `reject_signal`, `set_trading_mode`. Total
+registered tools jumps from 15 to 19.
+
+Operator-facing details (channel setup, mode toggle, stuck-signal
+recovery, emergency auto-off, audit trail): `docs/PHASE10_HITL_RUNBOOK.md`.
+
+---
+
 ## 11. Phase 9 — Continuous Learning (Ongoing)
 
 Once agents are running, the loop closes:

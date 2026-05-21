@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +38,19 @@ class RiskParams(BaseModel):
     stop_loss_pct: float = Field(0.05, gt=0.0, le=1.0)
     take_profit_pct: float = Field(0.10, gt=0.0, le=1.0)
     max_open_positions: int = Field(5, ge=1)
+    # — Phase-10 hard caps. Sentinel 0 disables the check. —
+    max_position_size_vnd: int = Field(
+        50_000_000, ge=0,
+        description="Per-name post-trade position cap, in VND. 0 disables.",
+    )
+    max_daily_loss_vnd: int = Field(
+        10_000_000, ge=0,
+        description="Realized loss ceiling for one trading day, in VND. 0 disables.",
+    )
+    max_trades_per_day: int = Field(
+        10, ge=0,
+        description="Maximum orders the live trader will submit in one day. 0 disables.",
+    )
 
 
 class Settings(BaseModel):
@@ -65,6 +79,29 @@ class Settings(BaseModel):
     execution_disabled: bool = Field(
         False,
         description="Phase-5 hard kill-switch. When True, every order placement returns rejected, regardless of safe-mode.",
+    )
+
+    # — Phase 10: HITL configuration —
+    trading_mode: Literal["hitl", "auto"] = Field(
+        "hitl",
+        description="`hitl` requires per-signal human confirmation; `auto` skips the channel but still re-validates.",
+    )
+    confirmation_channel: Literal["terminal", "telegram"] = Field(
+        "terminal",
+        description="Which channel a coordinator uses to ask for confirmation in HITL mode.",
+    )
+    confirmation_timeout_sec: int = Field(
+        3600, gt=0, description="How long a pending signal stays awaiting a reply before auto-expiring.",
+    )
+    max_price_drift_pct: float = Field(
+        2.0, gt=0.0, le=50.0,
+        description="Re-validator's drift cap, in percent. Default 2%.",
+    )
+    telegram_bot_token: str | None = Field(
+        None, description="Telegram Bot API token; required when confirmation_channel='telegram'.",
+    )
+    telegram_chat_id: str | None = Field(
+        None, description="Target chat id for HITL prompts; required when confirmation_channel='telegram'.",
     )
 
     @classmethod
